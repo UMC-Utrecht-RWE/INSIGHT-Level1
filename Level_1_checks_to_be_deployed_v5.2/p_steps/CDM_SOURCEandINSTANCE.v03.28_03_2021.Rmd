@@ -1,0 +1,434 @@
+---
+title: 'CONCEPTION- Level 1 checks: CDM_SOURCE and INSTANCE tables'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r create_dir, include=FALSE}
+if ("CDM_SOURCE and INSTANCE" %in% list.files(output_dir)){
+  cdm_inst_dir<-paste(output_dir, "CDM_SOURCE and INSTANCE/", sep="")
+} else {
+#Create the CDM_SOURCE and INSTANCE folder in the output dir
+dir.create(paste(output_dir, "CDM_SOURCE and INSTANCE", sep=""))
+  cdm_inst_dir<-paste(output_dir, "CDM_SOURCE and INSTANCE/", sep="")
+}
+```
+
+```{css, echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 30px 10px 30px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+``` {r list_of_variables, echo = FALSE}
+source_var<-as.data.table(cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_access_provider_code", "data_access_provider_name", "data_source_name", "data_dictionary_link", "etl_link",
+                        "cdm_vocabulary_version", "cdm_version", "instance_number", "date_creation", "recommended_end_date")))
+
+instance_var<-as.data.table(cbind(table_name="INSTANCE", 
+        variable_name=c("source_table_name", "source_column_name", "included_in_instance", "date_when_data_last_updated", "since_when_data_complete",
+                        "up_to_when_data_complete", "restriction_in_values", "list_of_values", "restriction_condition"), cdm_format = "character"))
+```
+
+```{r get_dir, include=FALSE}
+#Get all files in the CDM directory that are .csv files and have pattern METADATA
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+cdm_dir<-directory_CDM[grepl(pattern = "CDM_SOURCE", x = directory_CDM)]
+instance_dir<-directory_CDM[grepl(pattern = "INSTANCE", x = directory_CDM)]
+```
+
+```{r presence_function, echo=FALSE}
+if(length(cdm_dir) > 1){
+  presence<-"Yes"
+  error<-TRUE
+  comment<-"There are more than two files that contain the pattern CDM_SOURCE in your working directory. There should be only one. Fix the error and run the script again."
+}
+if (length(cdm_dir) ==0){
+  presence<-"No"
+  error<-TRUE
+  comment<-"There are no files that contain the pattern CDM_SOURCE in your working directory. Fix the error and run the script again."
+}
+if(length(cdm_dir) == 1){
+  presence<-"Yes"
+  error<-FALSE
+  comment<-"CDM_SOURCE is present in the working directory."
+}
+
+presence_check<-data.table(table_name="CDM_COURCE", presence= presence, error=error, comment=comment)
+
+if(length(instance_dir) > 1){
+  presence<-"Yes"
+  error<-TRUE
+  comment<-"There are more than two files that contain the pattern INSTANCE in your working directory. There should be only one. Fix the error and run the script again."
+}
+if (length(instance_dir) ==0){
+  presence<-"No"
+  error<-FALSE
+  comment<-"The INSTANCE table is not present in the working directory."
+}
+if(length(instance_dir) == 1){
+  presence<-"Yes"
+  error<-FALSE
+  comment<-"INSTANCE table is present in the working directory."
+}
+
+presence_check<-rbind(presence_check,
+                      data.table(table_name="INSTANCE", presence= presence, error=error, comment=comment))
+```
+
+```{r check_conventions, include=FALSE}
+check_conventions_cdm<-function(dt){
+  error<-rep(NA, 2)
+  comment<-rep(NA,2)
+  
+  con.1<-dt[,.N]
+  
+  if (con.1 > 1){
+    error[1]<-TRUE
+    comment[1]<-paste("Convention 1 is not satisfied.There are", dt[,.N], "rows in the CDM_SOURCE table.")
+  } else {
+    error[1]<-FALSE
+    comment[1]<-"Convention 1 is satisfied."
+  }
+  
+  result<-cbind(table_name="CDM_SOURCE", data.table(error=error, comment=comment))
+  return(result)
+}
+
+check_conventions_instance<-function(dt){
+  dt.0<-dt[included_in_instance=="yes"]
+   tables_names<-unique(dt.0[["source_table_name"]])
+   Res.con1<-vector(mode="list", length=length(tables_names))
+   Res.con2<-vector(mode="list", length=length(tables_names))
+   Res.con3<-vector(mode="list", length=length(tables_names))
+   for (i in 1:length(tables_names)){
+     dt.1<-dt.0[source_table_name==tables_names[i]]
+     con.1<- length(unique(dt.1[["date_when_data_last_updated"]]))
+     con.2<- length(unique(dt.1[["since_when_data_complete"]]))
+     con.3<-length(unique(dt.1[["up_to_when_data_complete"]]))
+     
+     if(con.1 >1){
+       Res.con1[[i]]<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 1 is not satisfied. There are", con.1, "different values for the variable date_when_data_last_updated for the source_table_name:", tables_names[i], ".")))
+     } else {
+       Res.con1[[i]]<-cbind(table_name="INSTANCE", data.table(error=FALSE, comment=paste("Convention 1 is satisfied for the source_table_name:", tables_names[i], ".")))
+     }
+     
+         if(con.2 >1){
+       Res.con2[[i]]<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 2 is not satisfied. There are", con.2, "different values for the variable since_when_data_complete for the source_table_name:", tables_names[i], ".")))
+     } else {
+       Res.con2[[i]]<-cbind(table_name="INSTANCE", data.table(error=FALSE, comment=paste("Convention 2 is satisfied for the source_table_name:", tables_names[i], ".")))
+     }
+     
+        if(con.3 >1){
+       Res.con3[[i]]<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 3 is not satisfied. There are", con.3, "different values for the variable up_to_when_data_complete for the source_table_name:", tables_names[i], ".")))
+     } else {
+       Res.con3[[i]]<-cbind(table_name="INSTANCE" , data.table(error=FALSE, comment=paste("Convention 3 is satisfied for the source_table_name:", tables_names[i], ".")))
+     }
+   }
+   
+   Res.con1<-as.data.table(do.call(rbind, Res.con1))
+   Res.con2<-as.data.table(do.call(rbind, Res.con2))
+   Res.con3<-as.data.table(do.call(rbind, Res.con3))
+   Res.con1to3<-rbind(Res.con1, Res.con2, Res.con3)
+   
+   con.4<-nrow(dt.0[is.na(restriction_in_values)])
+   if (con.4 >0){
+                Res.con4<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 4 is not satisfied. There is(are)", con.4, "missing value(s) for restriction_in_values when included_in_instance is set to `yes`.")))
+     } else {
+       Res.con4<-cbind(table_name="INSTANCE", data.table(error=FALSE, comment="Convention 4 is satisfied."))
+   }
+   
+   dt.2<-dt[included_in_instance=="no"]
+   con.5<-nrow(dt.2[!(is.na(list_of_values))])
+   con.6<-nrow(dt.2[!(is.na(restriction_condition))])
+   if (con.5>0){
+           Res.con5<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 5 is not satisfied. There is(are)", con.5, "completed value(s) for list_of_values when included_in_instance is set to `no`.")))
+     } else {
+       Res.con5<-cbind(table_name="INSTANCE", data.table(error=FALSE, comment="Convention 5 is satisfied.")) 
+   }
+      if (con.6>0){
+           Res.con6<-cbind(table_name="INSTANCE", data.table(error=TRUE, comment=paste("Convention 6 is not satisfied. There is(are)", con.6, "completed value(s) for restriction_condition when included_in_instance is set to `no`.")))
+     } else {
+       Res.con6<-cbind(table_name="INSTANCE", data.table(error=FALSE, comment="Convention 6 is satisfied.")) 
+   }
+   
+   Res.con<-rbind(Res.con1to3, Res.con4, Res.con5, Res.con6)
+   return(Res.con)
+}
+  
+```
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+ - **Date:** `r Sys.Date()`
+ - **Version:** `r "Level_1_checks_to_be_deployed_v5.2"`
+
+Conventions for the CDM_SOURCE table:  
+**1.** This table contains only one row.    
+
+Conventions for the INSTANCE table:  
+**1.** The values of `date_when_data_last_updated` are expected to be the same for all columns of the same table.       
+**2.** The values of `since_when_data_complete` are expected to be the same for all columns of the same table.    
+**3.** The values of `up_to_when_data_complete` are expected to be the same for all columns of the same table.       
+**4.** If included_in_instance is set to `yes` then restriction_in_values needs to be filled out.   
+**5.** If restriction_in_values is set to `no` then list_of_values should be empty.  
+**6.** If restriction_in_values is set to `no` then restriction_condition should be empty.  
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+## 1. Presence check
+
+```{r presence_output, echo=FALSE}
+datatable(presence_check, options = list(scrollX=TRUE))
+```
+
+```{r presence_exit, echo=FALSE}
+if (presence_check[error==TRUE, .N]>0){
+  knitr::knit_exit() #quit the script
+}
+```
+
+</div>
+
+<br>
+
+```{r fields_cdm, echo=FALSE}
+  #Check if more than one cdm table is present
+if(length(cdm_dir) == 1){
+  #First check the number of fields
+  
+  #Get the number of rows of the csv file without opening the file
+    no.cdm <-length(readLines(paste(path_dir, cdm_dir, sep = "")))-1
+    #Load the file and then get the number of rows (if the number of fields is not correct r imports till the error occurs)
+    suppressWarnings(df<-fread(paste(path_dir, cdm_dir, sep=""), stringsAsFactors = FALSE, colClasses = "character"))
+    ac.no.cdm <-nrow(df)
+    #Check if the number of rows match
+    #The first_row shows the first line of the csv file that has a problem(it incorporates the header and the next line)
+    if (no.cdm == ac.no.cdm) {
+      error.cdm <- FALSE
+      first_row.cdm <- "N/A"
+    } else { 
+      error.cdm <- TRUE
+      if (no.cdm - ac.no.cdm == 1){
+        first_row.cdm <-ac.no.cdm + 1
+      } else {
+      first_row.cdm<- ac.no.cdm + 2
+      }
+    }
+   fld_cdm<- data.table(cdm_table="CDM_SOURCE", table_name=cdm_dir, 
+                             csv_rows = no.cdm, current_table_rows = ac.no.cdm, first_row_error =first_row.cdm, error = error.cdm)
+   
+   no.mis.orig<-df[is.na(instance_number), .N]
+   df[,instance_number:=as.integer(instance_number)]
+   no.mis.num<-df[is.na(instance_number), .N]
+  
+if(no.mis.num-no.mis.orig>0){
+  format<-"The instance_number variable contains non-integer chracters. Fix it and run the scripit again."
+} else {format<-NULL}
+}
+```
+
+```{r fields_error_cdm, echo= FALSE}
+if (fld_cdm[error==TRUE,.N]>0){
+  datatable(fld_cdm)
+} 
+```
+
+```{r fields_exit_cdm, echo= FALSE}
+if (fld_cdm[error==TRUE,.N]>0){
+  knitr::knit_exit() #quit the script
+} 
+```
+
+```{r format_error_cdm, echo=FALSE}
+if (!is.null(format)){
+  format
+}
+```
+
+```{r format_exit_cdm, echo=FALSE}
+if (!is.null(format)){
+  knitr::knit_exit()
+}
+```
+
+```{r load_cdm, echo=FALSE, message=FALSE}
+if (fld_cdm[error==TRUE,.N]==0){
+  CDM_SOURCE<-fread(paste(path_dir, cdm_dir, sep=""), stringsAsFactors = F)
+  #Replace empty space with NA
+  CDM_SOURCE<-CDM_SOURCE[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+}
+```
+
+```{r fields_instance, echo=FALSE}
+
+if(length(instance_dir) == 1){
+   #First check the number of fields
+  
+  #Get the number of rows of the csv file without opening the file
+    no.ins <-length(readLines(paste(path_dir, instance_dir, sep = "")))-1
+    #Load the file and then get the number of rows (if the number of fields is not correct r imports till the error occurs)
+    suppressWarnings(df<-fread(paste(path_dir, instance_dir, sep=""), stringsAsFactors = FALSE, colClasses = "character"))
+    ac.no.ins <-nrow(df)
+    #Check if the number of rows match
+    #The first_row shows the first line of the csv file that has a problem(it incorporates the header and the next line)
+    if (no.ins == ac.no.ins) {
+      error.ins <- FALSE
+      first_row.ins <- "N/A"
+    } else { 
+      error.ins <- TRUE
+      if (no.ins - ac.no.ins == 1){
+        first_row.ins <-ac.no.ins + 1
+      } else {
+      first_row.ins<- ac.no.ins + 2
+      }
+    }
+    
+   fld_inst<- data.table(cdm_table="INSTANCE", table_name=instance_dir, 
+                             csv_rows = no.ins, current_table_rows = ac.no.ins, first_row_error =first_row.ins, error = error.ins)
+}
+
+```
+
+```{r instance_error_fields, echo=FALSE}
+if (length(instance_dir !=0)){
+if (fld_inst[error==TRUE,.N]>0){
+  datatable(fld_inst)
+} 
+}
+```
+   
+```{r instance_exit, echo=FALSE}
+if (length(instance_dir !=0)){
+if (fld_inst[error==TRUE,.N]>0){
+  knitr::knit_exit() #quit the script
+}
+}
+```
+   
+```{r load_instance, echo=FALSE, message=FALSE}  
+if (length(instance_dir !=0)){
+if (fld_inst[error==TRUE,.N]==0){
+  INSTANCE<-fread(paste(path_dir, instance_dir, sep=""), stringsAsFactors = F, colClasses = "character")
+  #Replace empty space with NA
+  INSTANCE<-INSTANCE[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+  }
+}
+```
+
+
+<div class = 'box3'>
+
+## 2. Check conventions
+
+```{r conventions_output, echo=FALSE}
+if (length(instance_dir !=0)){
+Res.con<-rbind(check_conventions_cdm(dt=CDM_SOURCE), check_conventions_instance(dt=INSTANCE))
+} else {
+  Res.con<-check_conventions_cdm(dt=CDM_SOURCE)
+}
+Res.con<-Res.con[error==TRUE]
+#Output for conventions
+if(nrow(Res.con)>0){
+datatable(Res.con, option=list(scrollX=TRUE))
+  }else {
+  print("All conventions are satisfied")
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Information about DAP and CDM version
+
+<br>
+
+```{r print_cdm, echo=FALSE}
+if(class(CDM_SOURCE[["date_creation"]]) != "Date") CDM_SOURCE[,("date_creation") := as.Date(as.character(CDM_SOURCE[["date_creation"]]), format = "%Y%m%d")]
+if(class(CDM_SOURCE[["recommended_end_date"]]) != "Date") CDM_SOURCE[,("recommended_end_date") := as.Date(as.character(CDM_SOURCE[["recommended_end_date"]]), format = "%Y%m%d")]
+info<-as.data.table(cbind(names(CDM_SOURCE),t(CDM_SOURCE)))
+setnames(info, "V1", "Information")
+info<-info[!(is.na(V2))]
+setnames(info, "V2", " ")
+datatable(info)
+
+#Save cdm_source as .csv file
+write.csv(CDM_SOURCE, paste(cdm_inst_dir,"CDM_SOURCE.csv",sep="") ,row.names = F)
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 4. INSTANCE table  
+
+<br>
+The INSTANCE table will be reported as is, if provided.
+
+```{r print_instance, echo=FALSE}
+if (length(instance_dir !=0)){
+if(class(INSTANCE[["date_when_data_last_updated"]]) != "Date") INSTANCE[,("date_when_data_last_updated") := as.Date(as.character(INSTANCE[["date_when_data_last_updated"]]), format = "%Y%m%d")]
+if(class(INSTANCE[["since_when_data_complete"]]) != "Date") INSTANCE[,("since_when_data_complete") := as.Date(as.character(INSTANCE[["since_when_data_complete"]]), format = "%Y%m%d")]
+if(class(INSTANCE[["up_to_when_data_complete"]]) != "Date") INSTANCE[,("up_to_when_data_complete") := as.Date(as.character(INSTANCE[["up_to_when_data_complete"]]), format = "%Y%m%d")]
+datatable(INSTANCE, options = list(scrollX=TRUE))
+
+} else {
+  print("The INSTANCE table is not provided.")
+}
+```
+
+```{r echo=F}
+if (length(instance_dir !=0)){
+#Save instance as .csv file
+write.csv(INSTANCE, paste(cdm_inst_dir,"INSTANCE.csv",sep="") ,row.names = F)
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 5. Output folder structure 
+
+CDM_SOURCE and INSTANCE     
+**1.** CDM_SOURCEandINSTANCE.html: Rmarkdown report         
+**2.** `CDM_SOURCE.csv`: CDM_SOURCE original table     
+**3.** `INSTANCE.CSV`: INSTANCE original table(if provided)      
+
+</div>

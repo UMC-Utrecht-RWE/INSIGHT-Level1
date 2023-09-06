@@ -1,0 +1,2864 @@
+---
+title: 'CONCEPTION - Level 1 checks: Step 1 to Step 3'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r create_dir, include=FALSE}
+if ("STEP1to3" %in% list.files(output_dir)){
+  step1to3_dir<-paste(output_dir, "STEP1to3/", sep="")
+  step1to3_less<-paste(step1to3_dir, "Masked/", sep="")
+} else {
+#Create the STEP1to3 folder in the output dir
+dir.create(paste(output_dir, "STEP1to3", sep=""))
+  step1to3_dir<-paste(output_dir, "STEP1to3/", sep="")
+  dir.create(paste(step1to3_dir,"Masked", sep=""))
+step1to3_less<-paste(step1to3_dir, "Masked/", sep="")
+}
+```
+
+```{css, echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 30px 10px 30px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+```{r check_directory, echo=FALSE}
+#Get all files in the CDM directory that are .csv files
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+
+#List of CDM tables that will undergo step 1 to step 3
+tables_CDM<-c("VISIT_OCCURRENCE", "EVENTS", "MEDICINES", "PROCEDURES", "VACCINES", 
+              "MEDICAL_OBSERVATIONS", "EUROCAT", "SURVEY_ID", "SURVEY_OBSERVATIONS", 
+              "PERSONS", "OBSERVATION_PERIODS", "PERSON_RELATIONSHIPS", "PRODUCTS", 
+              "CDM_SOURCE", "INSTANCE")
+
+#List of actual tables from tables_CDM that are present in the working directory
+actual_tables<-sapply(tables_CDM, function(y){directory_CDM[grepl(pattern = y, x = directory_CDM)]})
+for (i in length(actual_tables):1){
+  if (length(actual_tables[[i]])==0){
+    actual_tables[[i]]<-NULL
+  }
+}
+
+#Get metadata dir
+metadata_dir<-directory_CDM[grepl(pattern = "METADATA", x = directory_CDM)]
+```
+
+```{r load_metadata, include=FALSE}
+###########################################################################################
+#Load METADATA table into the workspace
+if(length(metadata_dir)>0){
+  METADATA<-fread(paste(path_dir, metadata_dir, sep=""), stringsAsFactors = F)
+  #Replace empty space with NA
+  METADATA<-METADATA[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+
+
+#Check which tables is present EUROCAT/EUROmediCAT and make the appropriate changes in actual_tables
+if(METADATA[type_of_metadata=="presence_of_table" & tablename=="EUROCAT" & other=="EUROmediCAT" & values=="Yes", .N]>0){
+  names(actual_tables)[names(actual_tables) == "EUROCAT"] <- "EUROmediCAT"
+}
+
+#Get all non-mandatory variables listed in the METADTA table as well as the present vocabularies
+if(METADATA[type_of_metadata=="presence_of_column" & values == "Yes", .N]==0){
+  print("There is no information in the METADATA table about presence of non-mandatory variable.")
+} else {
+  variables_METADATA<-METADATA[type_of_metadata=="presence_of_column" & values == "Yes"]
+}
+
+if(METADATA[type_of_metadata=="list_of_values" & !is.na(values), .N]==0){
+  print("There is no information in the METADATA table about vocabulary variables.")
+} else {
+  vocabulary_METADATA<-METADATA[type_of_metadata=="list_of_values" & !is.na(values)]
+}
+} else {print("The METADATA table is not present in the working directory.Take caution!")}
+
+```
+
+``` {r list_of_variables, echo = FALSE}
+#A datatable that contains information about all variables for each CDM table
+total_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("person_id", "visit_occurrence_id", "visit_start_date","visit_end_date", 
+                        "speciality_of_visit", "speciality_of_visit_vocabulary","status_at_discharge",
+                        "status_at_discharge_vocabulary", "meaning_of_visit", "origin_of_visit")),
+  cbind(table_name="EVENTS", 
+        variable_name=c("person_id", "start_date_record", "end_date_record", "event_code",
+                        "event_record_vocabulary", "text_linked_to_event_code", "event_free_text",
+                        "present_on_admission","laterality_of_event", "meaning_of_event",
+                        "origin_of_event", "visit_occurrence_id")),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("person_id", "medicinal_product_id", "medicinal_product_atc_code", 
+                        "date_dispensing", "date_prescription", "disp_number_medicinal_product",
+                        "presc_quantity_per_day", "presc_quantity_unit", "presc_duration_days", 
+                        "product_lot_number", "indication_code", "indication_code_vocabulary", 
+                        "meaning_of_drug_record", "origin_of_drug_record", "prescriber_speciality", 
+                        "prescriber_speciality_vocabulary", "visit_occurrence_id")),
+  cbind(table_name="PROCEDURES", 
+        variable_name=c("person_id", "procedure_date", "procedure_code", "procedure_code_vocabulary",
+                        "visit_occurrence_id", "meaning_of_procedure", "origin_of_procedure")),
+  cbind(table_name="VACCINES", 
+        variable_name=c("person_id", "vx_record_date", "vx_admin_date", "vx_atc", "vx_type",
+                        "vx_text", "medicinal_product_id","origin_of_vx_record", 
+                        "meaning_of_vx_record","vx_dose", "vx_manufacturer", "vx_lot_num", 
+                        "visit_occurrence_id")),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("person_id", "mo_date", "mo_code", "mo_record_vocabulary", "mo_source_table",
+                        "mo_source_column", "mo_source_value", "mo_unit", "mo_meaning", "mo_origin", "visit_occurrence_id")),
+  cbind(table_name="SURVEY_ID", 
+        variable_name=c("person_id", "survey_id", "survey_date", "survey_meaning", "survey_origin")),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name=c("person_id", "so_date", "so_source_table", "so_source_column", "so_source_value","so_unit", "so_meaning", "so_origin", "survey_id")),
+  cbind(table_name="PERSONS", 
+        variable_name=c("person_id", "day_of_birth", "month_of_birth", "year_of_birth", "day_of_death","month_of_death", "year_of_death", "sex_at_instance_creation", "race", "country_of_birth", "quality")),
+  cbind(table_name="OBSERVATION_PERIODS", 
+        variable_name=c("person_id", "op_start_date", "op_end_date", "op_origin", "op_meaning")),
+  cbind(table_name="PERSON_RELATIONSHIPS", 
+        variable_name=c("person_id", "related_id", "origin_of_relationship", "meaning_of_relationship", "method_of_linkage")),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("medicinal_product_id", "medicinal_product_name", "unit_of_presentation_type", "unit_of_presentation_num", "administration_dose_form", "administration_route", "medicinal_product_atc_code", "subst1_atc_code", "subst2_atc_code", "subst3_atc_code", "subst1_amount_per_form", "subst2_amount_per_form", "subst3_amount_per_form",
+                        "subst1_amount_unit", "subst2_amount_unit", "subst3_amount_unit","subst1_concentration", "subst2_concentration", "subst3_concentration", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content", "concentration_total_content_unit", "medicinal_product_manufacturer")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_access_provider_code", "data_access_provider_name", "data_source_name", "data_dictionary_link", "etl_link",
+                        "cdm_vocabulary_version", "cdm_version", "instance_number", "date_creation", "recommended_end_date")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("source_table_name", "source_column_name", "included_in_instance", "date_when_data_last_updated", "since_when_data_complete",
+                        "up_to_when_data_complete", "restriction_in_values", "list_of_values", "restriction_condition")),
+  cbind(table_name="EUROCAT", 
+        variable_name=c("centre", "numloc", "birth_date", "sex", "nbrbaby",
+                        "sp_twin", "nbrmalf", "type", "civreg","weight", "gestlength", "survival", "death_date", "datemo", "agemo", "bmi", "residmo", "totpreg", "whendisc", "condisc", "agedisc", "firstpre", "sp_firstpre","karyo", "sp_karyo", "gentest", "sp_gentest", "pm", "surgery", "syndrome", "sp_syndrome", "malfo1","sp_malfo1", "malfo2", "sp_malfo2", "malfo3","sp_malfo3", "malfo4", "sp_malfo4", "malfo5", "sp_malfo5","malfo6", "sp_malfo6", "malfo7", "sp_malfo7","malfo8", "sp_malfo8", "presyn", "premal1", "premal2","premal3", "premal4", "premal5", "premal6","premal7", "premal8", "omim", "orpha", "assconcept","occupmo", "illbef1", "illbef2", "matdiab", "hba1c", "illdur1", "illdur2", "folic_g14", "firsttri", "drugs1", "sp_drugs1", "drugs2", "sp_drugs2","drugs3", "sp_drugs3", "drugs4", "sp_drugs4", "drugs5","sp_drugs5", "extra_drugs", "consang", "sp_consang", "sibanom", "sp_sibanom", "prevsib", "sib1", "sib2","sib3", "moanom", "sp_moanom", "faanom", "sp_faanom", "matedu", "socm", "socf", "migrant","genrem", "person_id_child", "person_id_mother", "survey_id")),
+  cbind(table_name="EUROmediCAT", 
+        variable_name=c("centre", "numloc", "birth_date", "sex", "nbrbaby",
+                        "nbrmalf", "type","weight", "gestlength", "survival", "agemo", "bmi", "totpreg", "whendisc", "agedisc","karyo", "sp_karyo", "gentest", "sp_gentest", "pm", "syndrome", "sp_syndrome", "malfo1","sp_malfo1", "malfo2", "sp_malfo2", "malfo3","sp_malfo3", "malfo4", "sp_malfo4", "malfo5", "sp_malfo5","malfo6", "sp_malfo6", "malfo7", "sp_malfo7","malfo8", "sp_malfo8", "omim", "illbef1", "illbef2", "hba1c", "illdur1", "illdur2", "folic_g14", "firsttri", "drugs1", "sp_drugs1", "drugs2", "sp_drugs2","drugs3", "sp_drugs3", "drugs4", "sp_drugs4", "drugs5","sp_drugs5", "extra_drugs", "sibanom", "sp_sibanom", "prevsib", "sib1", "sib2","sib3", "moanom", "sp_moanom", "faanom", "sp_faanom", "matedu", "socm", "socf", "migrant","genrem", "person_id_child", "person_id_mother", "survey_id"))
+))
+
+#A datatable that contains information about mandatory variables for each CDM table
+mandatory_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("person_id", "visit_occurrence_id", "visit_start_date", "meaning_of_visit", "origin_of_visit")),
+  cbind(table_name="EVENTS", 
+        variable_name=c("person_id", "start_date_record", "event_record_vocabulary", "meaning_of_event", "origin_of_event")),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("person_id", "medicinal_product_atc_code", "meaning_of_drug_record", "origin_of_drug_record")),
+  cbind(table_name="PROCEDURES", 
+        mandatory_var=c("person_id", "procedure_date", "procedure_code", "procedure_code_vocabulary", "meaning_of_procedure", "origin_of_procedure")),
+  cbind(table_name="VACCINES", 
+        variable_name=c("person_id", "meaning_of_vx_record", "origin_of_vx_record")),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("person_id", "mo_date", "mo_source_value", "mo_meaning", "mo_origin")),
+  cbind(table_name="SURVEY_ID", 
+        mandatory_var=c("person_id", "survey_id", "survey_date", "survey_meaning", "survey_origin")),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name=c("person_id", "so_date", "so_source_table", "so_source_column", "so_source_value", "survey_id", "so_meaning", "so_origin")),
+  cbind(table_name="PERSONS", 
+        variable_name=c("person_id", "year_of_birth", "year_of_death", "sex_at_instance_creation")),
+  cbind(table_name="OBSERVATION_PERIODS", 
+        mandatory_var=c("person_id", "op_start_date", "op_end_date", "op_origin", "op_meaning")),
+  cbind(table_name="PERSON_RELATIONSHIPS", 
+        variable_name=c("person_id", "related_id", "origin_of_relationship", "meaning_of_relationship", "method_of_linkage")),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("medicinal_product_name", "medicinal_product_atc_code")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_access_provider_code", "data_access_provider_name", "data_source_name", "cdm_vocabulary_version", "cdm_version","instance_number", "date_creation", "recommended_end_date")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("source_table_name", "source_column_name", "included_in_instance")),
+    cbind(table_name="EUROCAT", 
+        variable_name=c("centre", "numloc", "birth_date", "sex", "nbrbaby", "nbrmalf", "type", "civreg","weight", "gestlength", "survival", "agemo", "whendisc", "agedisc", "surgery", "syndrome", "sp_syndrome", "malfo1","sp_malfo1", "malfo2", "sp_malfo2", "malfo3","sp_malfo3", "malfo4", "sp_malfo4", "malfo5", "sp_malfo5","malfo6", "sp_malfo6", "malfo7", "sp_malfo7","malfo8", "sp_malfo8")),
+      cbind(table_name="EUROmediCAT", 
+        variable_name=c("centre", "numloc", "birth_date", "sex", "nbrbaby", "nbrmalf", "type","weight", "gestlength", "survival", "agemo", "whendisc", "agedisc", "syndrome", "sp_syndrome", "malfo1","sp_malfo1", "malfo2", "sp_malfo2", "malfo3","sp_malfo3", "malfo4", "sp_malfo4", "malfo5", "sp_malfo5","malfo6", "sp_malfo6", "malfo7", "sp_malfo7","malfo8", "sp_malfo8"))
+))
+
+##A datatable that contains information about mandatory variables for each CDM table
+non.mandatory_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("visit_end_date", "speciality_of_visit", "speciality_of_visit_vocabulary","status_at_discharge","status_at_discharge_vocabulary")),
+  cbind(table_name="EVENTS", 
+        variable_name=c("end_date_record", "event_code", "text_linked_to_event_code", "event_free_text", "present_on_admission","laterality_of_event","visit_occurrence_id")),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("medicinal_product_id", "date_dispensing", "date_prescription", "disp_number_medicinal_product", "presc_quantity_per_day", "presc_quantity_unit", "presc_duration_days","product_lot_number", "indication_code", "indication_code_vocabulary", "prescriber_speciality", "prescriber_speciality_vocabulary", "visit_occurrence_id")),
+  cbind(table_name="PROCEDURES", 
+        variable_name="visit_occurrence_id"),
+  cbind(table_name="VACCINES", 
+        variable_name=c("vx_record_date", "vx_admin_date", "vx_atc", "vx_type",
+                        "vx_text", "medicinal_product_id","vx_dose", "vx_manufacturer", "vx_lot_num", 
+                        "visit_occurrence_id")),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("mo_code", "mo_record_vocabulary", "mo_source_table", "mo_source_column","mo_unit", "visit_occurrence_id")),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name="so_unit"),
+  cbind(table_name="PERSONS", 
+        variable_name=c("day_of_birth", "month_of_birth","day_of_death","month_of_death", "race", "country_of_birth", "quality")),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("medicinal_product_id", "unit_of_presentation_type", "unit_of_presentation_num", "administration_dose_form", "administration_route", "subst1_atc_code", "subst2_atc_code", "subst3_atc_code", "subst1_amount_per_form", "subst2_amount_per_form", "subst3_amount_per_form","subst1_amount_unit", "subst2_amount_unit", "subst3_amount_unit","subst1_concentration", "subst2_concentration", "subst3_concentration", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content", "concentration_total_content_unit", "medicinal_product_manufacturer")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c( "data_dictionary_link", "etl_link")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("date_when_data_last_updated", "since_when_data_complete",
+                        "up_to_when_data_complete", "restriction_in_values", "list_of_values", "restriction_condition")),
+  cbind(table_name="EUROCAT", 
+        variable_name=c("sp_twin", "death_date", "datemo", "bmi", "residmo", "totpreg", "condisc", "firstpre", "sp_firstpre","karyo", "sp_karyo", "gentest", "sp_gentest", "pm", "presyn", "premal1", "premal2","premal3", "premal4", "premal5", "premal6","premal7", "premal8", "omim", "orpha", "assconcept","occupmo", "illbef1", "illbef2", "matdiab", "hba1c", "illdur1", "illdur2", "folic_g14", "firsttri", "drugs1", "sp_drugs1", "drugs2", "sp_drugs2","drugs3", "sp_drugs3", "drugs4", "sp_drugs4", "drugs5","sp_drugs5", "extra_drugs", "consang", "sp_consang", "sibanom", "sp_sibanom", "prevsib", "sib1", "sib2","sib3", "moanom", "sp_moanom", "faanom", "sp_faanom", "matedu", "socm", "socf", "migrant","genrem", "person_id_child", "person_id_mother", "survey_id")),
+cbind(table_name="EUROmediCAT", 
+        variable_name=c( "bmi", "totpreg", "karyo", "sp_karyo", "gentest", "sp_gentest", "pm", "omim", "illbef1", "illbef2", "hba1c", "illdur1", "illdur2", "folic_g14", "firsttri", "drugs1", "sp_drugs1", "drugs2", "sp_drugs2","drugs3", "sp_drugs3", "drugs4", "sp_drugs4", "drugs5","sp_drugs5", "extra_drugs", "sibanom", "sp_sibanom", "prevsib", "sib1", "sib2","sib3", "moanom", "sp_moanom", "faanom", "sp_faanom", "matedu", "socm", "socf", "migrant","genrem", "person_id_child", "person_id_mother", "survey_id"))
+))
+
+
+#A datatable that contains information about vocabulary variables for each CDM table
+vocabulary_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("speciality_of_visit_vocabulary", "status_at_discharge_vocabulary", "meaning_of_visit")),
+  cbind(table_name="EVENTS", 
+        variable_name=c("event_record_vocabulary", "present_on_admission", "laterality_of_event", "meaning_of_event")),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("presc_quantity_unit", "indication_code_vocabulary", "meaning_of_drug_record", "prescriber_speciality_vocabulary")),
+  cbind(table_name="PROCEDURES", 
+        variable_name=c("procedure_code_vocabulary", "meaning_of_procedure")),
+  cbind(table_name="VACCINES", 
+        variable_name=c("vx_type", "meaning_of_vx_record", "vx_dose", "vx_manufacturer")),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("mo_record_vocabulary", "mo_source_table", "mo_unit", "mo_meaning")),
+  cbind(table_name="SURVEY_ID", 
+        variable_name=c("survey_meaning")),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name=c("so_source_table", "so_unit", "so_meaning")),
+  cbind(table_name="PERSONS", 
+        variable_name=c("sex_at_instance_creation", "quality")),
+  cbind(table_name="OBSERVATION_PERIODS", 
+        variable_name=c("op_meaning")),
+   cbind(table_name="PERSON_RELATIONSHIPS", 
+        variable_name=c("meaning_of_relationship", "method_of_linkage")),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("unit_of_presentation_type", "administration_dose_form","administration_route", "subst1_amount_unit","subst2_amount_unit","subst3_amount_unit", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content_unit")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_access_provider_code", "data_access_provider_name",  "data_source_name", "cdm_vocabulary_version", "cdm_version")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("source_table_name", "included_in_instance", "restriction_in_values")),
+    cbind(table_name="EUROCAT", 
+        variable_name=c("sex", "nbrbaby", "nbrmalf", "type", "civreg", "survival", "totpreg", "whendisc", "condisc", "firstpre","karyo", "gentest", "pm", "surgery", "presyn", "premal1", "premal2","premal3", "premal4", "premal5", "premal6","premal7", "premal8", "assconcept","matdiab", "folic_g14", "firsttri", "consang", "sibanom", "prevsib", "moanom", "faanom", "matedu", "socm", "socf", "migrant")),
+      cbind(table_name="EUROmediCAT", 
+        variable_name=c("sex", "nbrbaby", "nbrmalf", "type", "survival","totpreg", "whendisc","karyo", "gentest", "pm", "folic_g14", "firsttri", "sibanom", "prevsib", "moanom", "faanom", "matedu", "socm", "socf", "migrant"))
+  
+))
+
+fixed_vocabularies<-as.data.table(rbind(
+  cbind(table_name="EVENTS", 
+        variable_name=c("present_on_admission", "laterality_of_event"), fixed_vocabulary=c("yes no", "right left both")),
+  cbind(table_name="PERSONS", 
+        variable_name=c("sex_at_instance_creation"),fixed_vocabulary=c("M F U O")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("included_in_instance", "restriction_in_values"),fixed_vocabulary=c("yes no", "yes no")),
+    cbind(table_name="EUROCAT", 
+        variable_name=c("sex", "nbrbaby", "nbrmalf", "type", "civreg", "survival", "totpreg", "whendisc", "condisc", "firstpre","karyo", "gentest", "pm", "surgery", "presyn", "premal1", "premal2","premal3", "premal4", "premal5", "premal6","premal7", "premal8", "assconcept","matdiab", "folic_g14", "firsttri", "consang", "sibanom", "prevsib", "moanom", "faanom", "matedu", "socm", "socf", "migrant"), fixed_vocabulary=c("1 2 3 9", "1 2 3 4 5 6 7 8 9", "1 2 3 4 5 6 9", "1 2 3 4 9", "1 2 3 9", "1 2 3 9", "00 01 02 03 20 99", "1 2 3 4 5 6 7 9 10", "1 2 9", "1 2 3 4 5 6 7 8 9 10 11", "1 2 3 4 8 9", "1 2 3 9", "1 2 3 4 9", "1 2 3 4 5 6 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "1 2 3 9", "0 1 2 3 4 5 6 8 9 10", "1 2 3 4 5 6 9", "1 2 3 4 9", "1 2 3 4 9", "0 1 9", "1 2 3 4 9", "1 2 9", "1 2 3 4 9", "1 2 3 4 9", "1 2 3 9", "1 2 3 4 5 6 8 9", "0 1 2 3 4 5 6 8 9", "1 2 3 4 9")),
+      cbind(table_name="EUROmediCAT", 
+        variable_name=c("sex", "nbrbaby", "nbrmalf", "type", "survival","totpreg", "whendisc","karyo", "gentest", "pm", "folic_g14", "firsttri", "sibanom", "prevsib", "moanom", "faanom", "matedu", "socm", "socf", "migrant"),fixed_vocabulary=c("1 2 3 9", "1 2 3 4 5 6 7 8 9", "1 2 3 4 5 6 9","1 2 3 4 9", "1 2 3 9", "00 01 02 03 20 99", "1 2 3 4 5 6 7 9 10", "1 2 3 4 8 9", "1 2 3 9", "1 2 3 4 9", "1 2 3 4 9", "1 2 3 4 9", "1 2 3 4 9", "1 2 9", "1 2 3 4 9", "1 2 3 4 9", "1 2 3 9", "1 2 3 4 5 6 8 9", "0 1 2 3 4 5 6 8 9", "1 2 3 4 9"))))
+
+```
+
+```{r empty_variables_function, include=FALSE}
+##########################
+#1.2.0 Create the empty_check datatable
+##########################
+
+#Check which variables are completely empty for all tables present in the working directory
+empty_check<-function(dt){
+  
+  a<-dt[,lapply(.SD, FUN=function(x) all(is.na(x)))]
+  b<-data.table::melt(a, measure.vars=colnames(a))
+  setnames(b, "variable", "variable_name")
+  setnames(b, "value", "empty")
+  return(b)
+}
+
+```
+
+```{r mandatory_check_function, include=F}
+##########################
+#1.2 Mandatory check
+###########################
+
+mandatory_check<-function(tables_list, tables_CDM){
+  Res<-vector(mode="list", length=length(tables_CDM))
+  
+  if ("VISIT_OCCURRENCE" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.1<-merge(mandatory_var[table_name=="VISIT_OCCURRENCE"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.1[empty==TRUE])==0){
+      Res[[1]]<-NULL
+    } else {
+    Res[[1]]<-Res.1[empty==TRUE]
+    }
+  }
+  if ("EVENTS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.2<-merge(mandatory_var[table_name=="EVENTS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.2[empty==TRUE])==0){
+      Res[[2]]<-NULL
+    } else {
+      Res[[2]]<-Res.2[empty==TRUE]
+    }
+    
+  }
+  if ("MEDICINES" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.3<-merge(mandatory_var[table_name=="MEDICINES"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.3[empty==TRUE])==0){
+      Res[[3]]<-NULL
+    } else {
+      Res[[3]]<-Res.3[empty==TRUE]
+    }
+  }
+  if ("PROCEDURES" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.4<-merge(mandatory_var[table_name=="PROCEDURES"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.4[empty==TRUE])==0){
+      Res[[4]]<-NULL
+    } else {
+      Res[[4]]<-Res.4[empty==TRUE]
+    }
+  }
+  if ("VACCINES" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.5<-merge(mandatory_var[table_name=="VACCINES"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.5[empty==TRUE])==0){
+      Res[[5]]<-NULL
+    } else {
+      Res[[5]]<-Res.5[empty==TRUE]
+    }
+  }
+  if ("MEDICAL_OBSERVATIONS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.6<-merge(mandatory_var[table_name=="MEDICAL_OBSERVATIONS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.6[empty==TRUE])==0){
+      Res[[6]]<-NULL
+    } else {
+      Res[[6]]<-Res.6[empty==TRUE]
+    }
+  }
+  if ("EUROCAT" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.7<-merge(mandatory_var[table_name=="EUROCAT"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.7[empty==TRUE])==0){
+      Res[[7]]<-NULL
+    } else {
+      Res[[7]]<-Res.7[empty==TRUE]
+    }
+  }
+  if ("EUROmediCAT" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.7<-merge(mandatory_var[table_name=="EUROmediCAT"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.7[empty==TRUE])==0){
+      Res[[7]]<-NULL
+    } else {
+      Res[[7]]<-Res.7[empty==TRUE]
+    }
+  }
+  if ("SURVEY_ID" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.8<-merge(mandatory_var[table_name=="SURVEY_ID"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.8[empty==TRUE])==0){
+      Res[[8]]<-NULL
+    } else {
+      Res[[8]]<-Res.8[empty==TRUE]
+    }
+  }
+  if ("SURVEY_OBSERVATIONS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.9<-merge(mandatory_var[table_name=="SURVEY_OBSERVATIONS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.9[empty==TRUE])==0){
+      Res[[9]]<-NULL
+    } else {
+      Res[[9]]<-Res.9[empty==TRUE]
+    }
+  }
+  if ("PERSONS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.10<-merge(mandatory_var[table_name=="PERSONS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.10[empty==TRUE])==0){
+      Res[[10]]<-NULL
+    } else {
+      Res[[10]]<-Res.10[empty==TRUE]
+    }
+  }
+  if ("OBSERVATION_PERIODS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.11<-merge(mandatory_var[table_name=="OBSERVATION_PERIODS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.11[empty==TRUE])==0){
+      Res[[11]]<-NULL
+    } else {
+      Res[[11]]<-Res.11[empty==TRUE]
+    }
+  }
+  if ("PERSON_RELATIONSHIPS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.12<-merge(mandatory_var[table_name=="PERSON_RELATIONSHIPS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.12[empty==TRUE])==0){
+      Res[[12]]<-NULL
+    } else {
+      Res[[12]]<-Res.12[empty==TRUE]
+    }
+  }
+  if ("PRODUCTS" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.13<-merge(mandatory_var[table_name=="PRODUCTS"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.13[empty==TRUE])==0){
+      Res[[13]]<-NULL
+    } else {
+      Res[[13]]<-Res.13[empty==TRUE]
+    }
+  }
+  if ("CDM_SOURCE" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.14<-merge(mandatory_var[table_name=="CDM_SOURCE"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.14[empty==TRUE])==0){
+      Res[[14]]<-NULL
+    } else {
+      Res[[14]]<-Res.14[empty==TRUE]
+    }
+  }
+  if ("INSTANCE" %in% names(tables_list)){
+    setkey(mandatory_var, table_name, variable_name)
+    Res.15<-merge(mandatory_var[table_name=="INSTANCE"], empty_list_var, all.x = TRUE)
+    if(nrow(Res.15[empty==TRUE])==0){
+      Res[[15]]<-NULL
+    } else {
+      Res[[15]]<-Res.15[empty==TRUE]
+    }
+  }
+
+    if (length(Res) !=0) {
+    Res<-compact(Res)
+    Res<-do.call(rbind,Res)
+    return(Res)} else {
+      Res<-NULL
+      return(Res)
+    }
+}
+
+```
+
+```{r non.mandatory_check_function, include=F}
+###########################
+#1.3 Non-mandatory check (metadata comparison)
+###########################
+
+non.mandatory_check<-function(tables_list){
+
+  empty_true<-empty_list_var[empty==TRUE]
+  metadata_var<-variables_METADATA[,.("table_name"=tablename, "variable_name"=columnname)][,c("table_name", "variable_name")]
+  metadata_var[,filter.m:=1]
+  current_table<-non.mandatory_var[table_name %chin% names(actual_tables.r) & variable_name %!in% empty_true[["variable_name"]],1:2][,c("table_name", "variable_name")]
+  
+  Res<-merge(total_var, empty_true, by=c("table_name", "variable_name"), all = T)
+  Res<-merge(Res, metadata_var, by=c("table_name", "variable_name"), all = T)
+  Res<-merge(Res, current_table, by=c("table_name", "variable_name"), all = T)
+  #Remove rows where empty, filter.c and filter.m
+  Res<-Res[!is.na(empty) & !is.na(filter.m)]
+
+  
+if (Res[,.N]==0) {Res<-NULL}
+  if (!is.null(Res)){
+Res[is.na(empty) & is.na(filter.m), comment:="Present in the current table, but missing in the METADATA table. Fix the METADATA table."]
+Res[empty==TRUE & filter.m==1, comment:="Present in the METADATA table, but missing in the current table. If variable should be missing, set values for presence_of_column in the METADATA table to No."]
+Res[,filter.m:=NULL]
+  }
+  return(Res)
+}
+```
+
+```{r vocabulary_check_function, include=F}
+
+###########################
+#1.4 Vocabulary check
+###########################
+vocabulary_check<-function(tables_list){
+  
+  empty_true<-empty_list_var[empty==TRUE]
+  voc_metadata<-vocabulary_METADATA[,.("table_name"=tablename, "variable_name"=columnname)][,c("table_name", "variable_name")]
+  voc_metadata[,filter.m:=1]
+  current_table<-vocabulary_var[table_name %chin% names(tables_list) & !(variable_name %chin% empty_true[["variable_name"]])][,c("table_name", "variable_name")]
+  
+  Res<-merge(total_var, empty_true, by=c("table_name", "variable_name"), all = T)
+  Res<-merge(Res, voc_metadata, by=c("table_name", "variable_name"), all = T)
+  Res<-merge(Res, current_table, by=c("table_name", "variable_name"), all = T)
+  #Remove rows where empty, filter.c and filter.m
+  Res<-Res[!is.na(empty) & !is.na(filter.m)]
+
+  
+  if (Res[,.N]==0) {Res<-NULL}
+    if (!is.null(Res)){
+Res[is.na(empty) & is.na(filter.m), comment:="The variable is present in the current table but no information about values of this variable is provided in the METADATA table. Fix the METADATA table."]
+Res[empty==TRUE & filter.m==1, comment:="Values about this variable are present in the METADATA table even though the variable is completely empty in the current table."]
+Res[,filter.m:=NULL]
+    }
+  return(Res)
+}
+```
+
+```{r check_values_function, include=F}
+
+###########################
+#1.5 List of values
+###########################
+
+values_check<-function(tables_list, tables_CDM){
+  
+  values_var<-values_list[,.(table_name, table_directory, variable_name, "values_table"=values)]
+  values_metadata<-vocabulary_METADATA[,.("table_name"=tablename, "variable_name"=columnname, "values_metadata"=values)]
+values_complete<-merge(values_var, values_metadata, by=c("table_name", "variable_name"), all=TRUE)
+setcolorder(values_complete, c("table_name", "table_directory", "variable_name", "values_table", "values_metadata"))
+
+#Variable that will save if the values don't match
+error<-vector(mode="list", length=length(values_complete))
+
+values_combine<-function(dt){
+  a<-unlist(strsplit(as.character(dt[,values_table]), " "))
+  b<-unlist(strsplit(as.character(dt[,values_metadata]), " "))
+  
+  c<-setdiff(a,b)
+  d<-setdiff(b,a)
+ 
+
+if (length(c) !=0 | length(d)!=0) {
+  e<-TRUE
+
+} else { 
+  e<-FALSE
+
+}
+ 
+if (length(c) ==0) {
+  f<-TRUE
+} else { 
+  f<-FALSE
+}
+res<-cbind(error=e,filter=f)
+  return(res)
+}
+ 
+
+#Save the error if there are differences observed 
+for (i in 1:nrow(values_complete)){
+  error[[i]]<-values_combine(values_complete[i,])
+}
+error<-as.data.table(do.call(rbind,error))
+Res<-data.table(values_complete, error)
+
+#Check if there are cases where there are more values in the metadata than the table and if so check whether the value in the table is mentioned in the metadata
+a<-vector(mode="list", length=nrow(Res))
+for (i in 1:Res[,.N]){
+a[[i]]<-Res[i,lapply(.SD, FUN= function(x) length(unlist(strsplit(as.character(x), " ")))), .SDcols=c("values_table", "values_metadata")]
+}
+
+a<-do.call(rbind,a)
+
+Res<-data.table(Res, a)
+names(Res)<-c("table_name", "table_directory","variable_name", "values_table", "values_metadata", "error", "filter", "count_table", "count_metadata")
+
+Res[,error:=as.character(error)]
+Res[count_table<count_metadata & filter==TRUE, error:="warning"]
+Res[,filter:=NULL][,count_table:=NULL][,count_metadata:=NULL]
+return(Res)
+
+}
+```
+
+```{r echo=FALSE}
+fixed_voc_check<-function(tables_list, tables_CDM){
+  
+  values_var<-values_list[,.(table_name, table_directory, variable_name, "values_table"=values)]
+values_fixed<-merge(values_var, fixed_vocabularies, by=c("table_name", "variable_name"), all=TRUE)
+setcolorder(values_fixed, c("table_name", "table_directory", "variable_name", "values_table", "fixed_vocabulary"))
+#remove empty values in fixed_vocabulary
+values_fixed<-values_fixed[!is.na(fixed_vocabulary)]
+
+#Variable that will save if the values don't match
+error<-vector(mode="list", length=length(values_fixed))
+
+values_combine<-function(dt){
+  a<-unlist(strsplit(as.character(dt[,values_table]), " "))
+  b<-unlist(strsplit(as.character(dt[,fixed_vocabulary]), " "))
+  
+  c<-setdiff(a,b)
+  d<-setdiff(b,a)
+ 
+
+if (length(c) !=0 | length(d)!=0) {
+  e<-TRUE
+
+} else { 
+  e<-FALSE
+
+}
+ 
+if (length(c) ==0) {
+  f<-TRUE
+} else { 
+  f<-FALSE
+}
+res<-cbind(error=e,filter=f)
+  return(res)
+}
+ 
+
+#Save the error if there are differences observed 
+for (i in 1:nrow(values_fixed)){
+  error[[i]]<-values_combine(values_fixed[i,])
+}
+error<-as.data.table(do.call(rbind,error))
+Res<-data.table(values_fixed, error)
+
+#Check if there are cases where there are more values in the fixed vocabularies than the table and if so check whether the value in the table is mentioned in the column fixed vocanbularies
+a<-vector(mode="list", length=nrow(Res))
+for (i in 1:Res[,.N]){
+a[[i]]<-Res[i,lapply(.SD, FUN= function(x) length(unlist(strsplit(as.character(x), " ")))), .SDcols=c("values_table", "fixed_vocabulary")]
+}
+
+a<-do.call(rbind,a)
+
+Res<-data.table(Res, a)
+names(Res)<-c("table_name", "table_directory","variable_name", "values_table", "fixed_vocabulary", "error", "filter", "count_table", "count_vocabulary")
+
+Res[,error:=as.character(error)]
+Res[count_table<count_vocabulary & filter==TRUE, error:="warning"]
+Res[,filter:=NULL][,count_table:=NULL][,count_vocabulary:=NULL]
+return(Res)
+}
+```
+
+```{r missing_analysis_counts, include=F}
+#################################################################################################################
+##Step 2: Missing data analysis(missing data overall, stratified by meaning if present, stratified by meaning and year if present)
+#################################################################################################################
+
+#Function that calculates missing data overall
+missing_overall<-function(dt){
+  a<-dt[, lapply(.SD, FUN=function(x) sum(is.na(x)))]
+  b<-dt[, lapply(.SD, FUN=NROW)]
+  t.a<-data.table(variable_name=colnames(dt), count=as.data.table(t(a)))
+  t.b<-data.table(variable_name=colnames(dt), total=as.data.table(t(b)))
+  t<-t.a[t.b, on="variable_name"]
+  setnames(t, "count.V1", "count")
+  setnames(t, "total.V1", "total")
+  return(t)
+}
+
+#Function that calculates missing data stratified by meaning if present 
+missing_meaning<-function(dt, var_name){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  a<-dt[!(is.na(meaning)), lapply(.SD, function(x) sum(is.na(x))), by=meaning]
+  b<-dt[!(is.na(meaning)), lapply(.SD, NROW), by=meaning]
+  #From wide format to long format
+  a<-data.table::melt(a, id.vars="meaning", measure.vars=colnames(a)[-1])
+  setnames(a, "value", "count")
+  b<-data.table::melt(b, id.vars="meaning", measure.vars=colnames(b)[-1])
+  setnames(b, "value", "total")
+  result<-setkey(a,"meaning", "variable")[b,]
+  setnames(result, "variable", "variable_name")
+  setcolorder(result, c("variable_name", "meaning", "count", "total"))
+  return(result)
+}
+
+#Function that calculates missing data stratified by year
+missing_year<-function(dt, date_var){
+  #Check if date variable is the correct format
+  if(class(dt[[date_var]]) != 'Date') dt[,(date_var) := as.Date(as.character(dt[[date_var]]), format = '%Y%m%d')]
+  dt[, year:= lubridate::year(dt[[date_var]])] #Create year variable
+  a<-dt[!(is.na(year)), lapply(.SD, function(x) sum(is.na(x))), by=year]
+  b<-dt[!(is.na(year)), lapply(.SD, NROW), by=year]
+  #From wide format to long format
+  a<-data.table::melt(a, id.vars="year", measure.vars=colnames(a)[-1])
+  setnames(a, "value", "count")
+  b<-data.table::melt(b, id.vars="year", measure.vars=colnames(b)[-1])
+  setnames(b, "value", "total")
+  result<-setkey(a,"year", "variable")[b,]
+  setnames(result, "variable", "variable_name")
+  setcolorder(result, c("variable_name", "year", "count", "total"))
+  return(result)
+}
+
+#Function that will calculate missing data by year for the persons table
+missing_year_persons<-function(dt, year_bd){
+  dt[, year:= dt[[year_bd]]]#Duplicate the year variable
+  a<-dt[!(is.na(year)), lapply(.SD, function(x) sum(is.na(x))), by=year]
+  b<-dt[!(is.na(year)), lapply(.SD, NROW), by=year]
+  #From wide format to long format
+  a<-data.table::melt(a, id.vars="year", measure.vars=colnames(a)[-1])
+  setnames(a, "value", "count")
+  b<-data.table::melt(b, id.vars="year", measure.vars=colnames(b)[-1])
+  setnames(b, "value", "total")
+  result<-setkey(a,"year", "variable")[b,]
+  setnames(result, "variable", "variable_name")
+  setcolorder(result, c("variable_name", "year", "count", "total"))
+  return(result)
+}
+
+#Function that calculates missing data stratified by meaning and year if present 
+missing_meaning_year<-function(dt, var_name, date_var){
+  #Check if date variable is the correct format
+  if(class(dt[[date_var]]) != 'Date') dt[,(date_var) := as.Date(as.character(dt[[date_var]]), format = '%Y%m%d')]
+  dt[, year:= lubridate::year(dt[[date_var]])] #Create year variable
+  dt[, meaning:=dt[[var_name]]] #Duplicate the meaning variable
+  #Calculate missing counts by meaning and year
+  a<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, function(x) sum(is.na(x))), by=.(meaning, year)]
+  #Calculate total count
+  b<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, NROW), by=.(meaning, year)]
+  #From wide to long format
+  a<-data.table::melt(a, id.vars=c("meaning","year"), measure.vars=colnames(a)[-c(1:2)])
+  setnames(a, "value", "count")
+  b<-data.table::melt(b, id.vars=c("meaning","year"), measure.vars=colnames(b)[-c(1:2)])
+  setnames(b, "value", "total")
+  result<-setkey(a, "meaning", "year", "variable")[b,]
+  setnames(result, "variable", "variable_name")
+  setcolorder(result, c("variable_name", "meaning", "year", "count", "total"))
+  return(result)
+}
+
+missing_mean_year_med.vac<-function(dt, var_name, date_var1, date_var2){
+  #Check if date variable is the correct format
+  if(class(dt[[date_var1]]) != 'Date') dt[,(date_var1) := as.Date(as.character(dt[[date_var1]]), format = '%Y%m%d')]
+  if(class(dt[[date_var2]]) != 'Date') dt[,(date_var2) := as.Date(as.character(dt[[date_var2]]), format = '%Y%m%d')]
+  
+  #If date 1 missing et filter to 0 otherwise 1, same for date 2
+dt[is.na(get(date_var1)), filter_1:=0][!is.na(get(date_var1)), filter_1:=1]
+dt[is.na(get(date_var2)), filter_2:=0][!is.na(get(date_var2)), filter_2:=1]
+
+#If date 1 present and date 2 missing, filter is 2, if date 1 is missing and date 2 present filter is 3
+#If both present filter is 1, if both missing filter is 0
+dt[filter_1==1 & filter_2==0, filter:=2][filter_1==0 & filter_2==1, filter:=3][filter_1==1 & filter_2==1, filter:=1][filter_1==0 & filter_2==0, filter:=0]
+dt[,filter_1:=NULL][,filter_2:=NULL] #remove filter_1 and filter_2
+ 
+#If both missing date is NA
+dt[, `:=`(date = fifelse(filter == 0,NA, NA))]
+#If both present set date to date 1
+dt[, `:=`(date = fifelse(filter == 1 & filter !=3 & filter !=0 , get(date_var1), get(date_var2)))]
+#If date 2 present set filter to date 2
+dt[, `:=`(date = fifelse(filter == 3  & filter !=2 & filter !=0, get(date_var2), get(date_var1)))]
+dt[,filter:=NULL] #remove filter
+  
+  dt[, year:= lubridate::year(dt[,date])] #Create year variable
+  dt[, meaning:=dt[[var_name]]] #Duplicate the meaning variable
+  #Calculate missing counts by meaning and year
+  a<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, function(x) sum(is.na(x))), by=.(meaning, year)]
+  #Calculate total count
+  b<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, NROW), by=.(meaning, year)]
+  #From wide to long format
+  a<-data.table::melt(a, id.vars=c("meaning","year"), measure.vars=colnames(a)[-c(1:2)])
+  setnames(a, "value", "count")
+  b<-data.table::melt(b, id.vars=c("meaning","year"), measure.vars=colnames(b)[-c(1:2)])
+  setnames(b, "value", "total")
+  result<-setkey(a, "meaning", "year", "variable")[b,]
+  setnames(result, "variable", "variable_name")
+  setcolorder(result, c("variable_name", "meaning", "year", "count", "total"))
+  return(result)
+}
+
+```
+
+```{r dates_check_function, include=F}
+############################################################################################
+##Step 3: Dates check(report counts of errors for error in format, not allowable values for year, month, day and counts of future dates)
+###########################################################################################
+
+dates_check<-function(dt, date_var1, date_var2=NULL, date_var3=NULL){
+  variable_name<-rep(NA, length=3)
+  error_format<-rep(NA, length=3)
+  future_dates<-rep(NA, length=3)
+  error_year<-rep(NA, length=3)
+  error_month<-rep(NA, length=3)
+  error_day<-rep(NA, length=3)
+  
+  #error_format
+  if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var1)]==FALSE){
+    error_format[1]<-sum(dt[, lapply(.SD, nchar), .SDcols=c(date_var1)] != 8, na.rm = T)
+    dt[, count_format1:= lapply(.SD, nchar), .SDcols=c(date_var1)]
+  }
+  if (!(is.null(date_var2))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var2)]==FALSE){
+      error_format[2]<-sum(dt[, lapply(.SD, nchar), .SDcols=c(date_var2)] != 8, na.rm = T)
+      dt[, count_format2:= lapply(.SD, nchar), .SDcols=c(date_var2)]
+    }
+  }
+  if (!(is.null(date_var3))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var3)]==FALSE){
+      error_format[3]<-sum(dt[, lapply(.SD, nchar), .SDcols=c(date_var3)] != 8, na.rm = T)
+      dt[, count_format3:= lapply(.SD, nchar), .SDcols=c(date_var3)]
+    }
+  }
+  
+  #Update the datatable by removing dates with format error
+  if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var1)]==FALSE){
+    dt[count_format1==8]
+  }
+  if (!(is.null(date_var2))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var2)]==FALSE){
+      dt[count_format2==8]
+    }
+  }
+  if (!(is.null(date_var3))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var3)]==FALSE){
+      dt[count_format3==8]
+    }
+  }
+  
+  year.p<-as.character(lubridate::year(Sys.Date()))
+  if(nchar(lubridate::month(Sys.Date()))==1){
+    month.p<-paste("0",as.character(lubridate::month(Sys.Date())), sep="")
+  } else{month.p<-as.character(lubridate::month(Sys.Date()))}
+  if(nchar(lubridate::day(Sys.Date()))==1){
+    day.p<-paste("0",as.character(lubridate::day(Sys.Date())), sep="")
+  } else{day.p<-as.character(lubridate::day(Sys.Date()))}
+  
+  present<-as.numeric(paste(year.p, month.p, day.p, sep=""))
+  
+  #Date 1
+  if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var1)]==FALSE){
+    variable_name[1]<-date_var1
+    future_dates[1]<-sum((as.numeric(dt[[date_var1]])-present)>0, na.rm = T)
+    error_year[1]=sum(sum(as.numeric(substr(dt[[date_var1]], 1, 4))>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T), 
+                      sum(as.numeric(substr(dt[[date_var1]], 1, 4))<1995, na.rm = T))
+    error_month[1]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var1)] >12, na.rm = T),  
+                       sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var1)] <1, na.rm = T))
+    error_day[1]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var1)] >31, na.rm = T),  
+                     sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var1)] <1, na.rm = T))
+  }
+  
+  #Date 2
+  if (!(is.null(date_var2))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var2)]==FALSE){
+      variable_name[2]<-date_var2
+      future_dates[2]<-sum((as.numeric(dt[[date_var2]])-present)>0, na.rm = T)
+      error_year[2]=sum(sum(as.numeric(substr(dt[[date_var2]], 1, 4))>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T), 
+                        sum(as.numeric(substr(dt[[date_var2]], 1, 4))<1995, na.rm = T))
+      error_month[2]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var2)] >12, na.rm = T),  
+                         sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var2)] <1, na.rm = T))
+      error_day[2]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var2)] >31, na.rm = T),  
+                       sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var2)] <1, na.rm = T))
+    }
+  }
+  
+  #Date 3
+  if (!(is.null(date_var3))){
+    if(dt[, lapply(.SD, FUN=function(x) all(is.na(x))), .SDcols=c(date_var3)]==FALSE){
+      variable_name[3]<-date_var3
+      future_dates[3]<-sum((as.numeric(dt[[date_var3]])-present)>0, na.rm = T)
+      error_year[3]=sum(sum(as.numeric(substr(dt[[date_var3]], 1, 4))>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T), 
+                        sum(as.numeric(substr(dt[[date_var3]], 1, 4))<1995, na.rm = T))
+      error_month[3]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var3)] >12, na.rm = T),  
+                         sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 5 , 6))), .SDcols=c(date_var3)] <1, na.rm = T))
+      error_day[3]=sum(sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var3)] >31, na.rm = T),  
+                       sum(dt[, lapply(.SD, FUN=function(x) as.numeric(substr(x, 7 , 8))), .SDcols=c(date_var3)] <1, na.rm = T))
+    }
+  }
+  
+  res<-data.table(variable_name, error_format, error_year, error_month, error_day, future_dates)
+  if(nrow(res)==0) {res<-data.table(variable_name=NA, error_format=NA, error_year=NA, error_month=NA, error_day=NA, future_dates=NA)}
+  if (nrow(res[is.na(variable_name)])>0) {res<-res[!(is.na(variable_name))] } 
+  return(res)
+}
+
+
+#Dates check for the PERSONS table
+dates_check_person<-function(dt, year1, month1, day1, year2, month2, day2){
+  
+  error_format.y1<-sum(dt[, lapply(.SD, nchar), .SDcols=c(year1)] != 4, na.rm=T)
+  error_format.m1<-sum(dt[, lapply(.SD, nchar), .SDcols=c(month1)] != 2, na.rm=T)
+  error_format.d1<-sum(dt[, lapply(.SD, nchar), .SDcols=c(day1)] != 2, na.rm=T)
+  error_format.y2<-sum(dt[, lapply(.SD, nchar), .SDcols=c(year2)] != 4, na.rm=T)
+  error_format.m2<-sum(dt[, lapply(.SD, nchar), .SDcols=c(month2)] != 2, na.rm=T)
+  error_format.d2<-sum(dt[, lapply(.SD, nchar), .SDcols=c(day2)] != 2, na.rm=T)
+  
+  #Update the datatable by removing dates with format error
+  dt[, year_format1:= lapply(.SD, nchar), .SDcols=c(year1) ]
+  dt[, month_format1:= lapply(.SD, nchar), .SDcols=c(month1)]
+  dt[, day_format1:= lapply(.SD, nchar), .SDcols=c(day1)]
+  dt[, year_format2:= lapply(.SD, nchar), .SDcols=c(year2) ]
+  dt[, month_format2:= lapply(.SD, nchar), .SDcols=c(month2)]
+  dt[, day_format2:= lapply(.SD, nchar), .SDcols=c(day2)]
+  dt<-dt[year_format1 !=4 | month_format1 !=2 | day_format1 !=2 | year_format2 !=4 | month_format2 !=2 | day_format2 !=2]
+  
+  #Continue with the other checks
+  error_year1<-sum(sum(as.numeric(dt[[year1]])>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T), 
+                   sum(as.numeric(dt[[year1]])<1995, na.rm = T))
+  error_year2<-sum(sum(as.numeric(dt[[year2]])>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T), 
+                   sum(as.numeric(dt[[year2]])<1995, na.rm = T))
+  error_month1=sum(sum(as.numeric(dt[[month1]]) >12, na.rm = T),  
+                   sum(as.numeric(dt[[month1]]) <1, na.rm = T))
+  error_day1=sum(sum(as.numeric(dt[[day1]]) >31, na.rm = T),  
+                 sum(as.numeric(dt[[day1]]) <1, na.rm = T))
+  error_month2=sum(sum(as.numeric(dt[[month2]]) >12, na.rm = T),  
+                   sum(as.numeric(dt[[month2]]) <1, na.rm = T))
+  error_day2=sum(sum(as.numeric(dt[[day2]]) >31, na.rm = T),  
+                 sum(as.numeric(dt[[day2]]) <1, na.rm = T))
+  
+  future_dates1<-sum(as.numeric(dt[[year1]])>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T)
+  future_dates2<-sum(as.numeric(dt[[year2]])>as.numeric(substr(as.character(Sys.Date()), 1, 4)), na.rm=T)
+  variable_name<-c("year_of_birth", "month_of_birth", "day_of_birth", "year_of_death", "month_of_death", "day_of_death")
+  Res<-data.table(variable_name, error_format=rbind(error_format.y1, error_format.m1, error_format.d1, error_format.y2, error_format.m2, error_format.d2),
+                  error_year=rbind(error_year1, "N/A", "N/A", error_year2, "N/A", "N/A"),
+                  error_month=rbind("N/A", error_month1, "N/A", "N/A", error_month2, "N/A"),
+                  error_day=rbind("N/A", "N/A", error_day1, "N/A", "N/A", error_day2), 
+                  future_dates=rbind(future_dates1, "N/A", "N/A", future_dates2, "N/A", "N/A"))
+  names(Res)<-c("variable_name", "error_format", "error_year", "error_month", "error_day", "future_dates")
+  return(Res)
+}
+```
+
+```{r preliminary_steps, include=FALSE, message=FALSE}
+source(paste0(pre_dir, "preliminary_step_1to_3.R"), local = knitr::knit_global())
+```
+
+```{r level_1_check, include=F}
+#tables_list is the list of tables that are present in the working directory
+#tables_CDM vector containg the names of CDM tables
+level_1_check<-function(tables_list, tables_CDM){
+  Res<-vector(mode="list", length=length(tables_CDM))
+  names(Res)<-tables_CDM
+  Res.values<-vector(mode="list", length=length(tables_CDM))
+   names(Res.values)<-tables_CDM
+  Res.overall<-vector(mode="list", length=length(tables_CDM))
+   names(Res.overall)<-tables_CDM
+  Res.meaning<-vector(mode="list", length=length(tables_CDM))
+   names(Res.meaning)<-tables_CDM
+  Res.year<-vector(mode="list", length=length(tables_CDM))
+   names(Res.year)<-tables_CDM
+  Res.my<-vector(mode="list", length=length(tables_CDM))
+   names(Res.my)<-tables_CDM
+  Res.dates<-vector(mode="list", length=length(tables_CDM))
+   names(Res.dates)<-tables_CDM
+  Res.dates.person<-vector(mode="list", length=1)
+  
+  if ("VISIT_OCCURRENCE" %in% names(tables_list)){
+    Res.1<-list()
+    Res.val.1<-list()
+    Res.o.1<-list()
+    Res.m.1<-list()
+    Res.my.1<-list()
+    Res.d.1<-list()
+    w<-1
+    z<-1
+    i<-1
+    
+    for (i in 1:length(tables_list$VISIT_OCCURRENCE)){
+      df<-fread(paste(path_dir, tables_list$VISIT_OCCURRENCE[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+   
+      Res.d.1[[w]]<-data.table(table_name="VISIT_OCCURRENCE", table_directory=tables_list$VISIT_OCCURRENCE[i], dates_check(df, "visit_start_date", "visit_end_date"))
+      
+      var<-total_var[table_name=="VISIT_OCCURRENCE", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="VISIT_OCCURRENCE", .(variable_name)] #Get all vocabulary variables
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]] #Check which of the variables is completely missing
+      b<-data.table(voc_var,t(a))#transpose
+      setnames(b, "V1", "empty")
+      b<-data.table(table_name="VISIT_OCCURRENCE",table_directory=tables_list$VISIT_OCCURRENCE[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)
+     } else {
+       list_values<-NULL
+     }
+      
+      #Save results for empty check and values check
+      Res.1[[w]]<-data.table(table_name="VISIT_OCCURRENCE",empty_check(df))
+      Res.val.1[[w]]<-list_values
+      Res.o.1[[w]]<-data.table(table_name="VISIT_OCCURRENCE", missing_overall(df))
+      Res.m.1[[w]]<-data.table(table_name="VISIT_OCCURRENCE", missing_meaning(df, "meaning_of_visit"))
+      Res.my.1[[w]]<-data.table(table_name="VISIT_OCCURRENCE", missing_meaning_year(df, "meaning_of_visit", "visit_start_date"))
+     w<-w+1
+     rm(df)
+    }
+    
+    Res$VISIT_OCCURRENCE<-Res.1
+    Res.values$VISIT_OCCURRENCE<-Res.val.1
+    Res.overall$VISIT_OCCURRENCE<-Res.o.1
+    Res.meaning$VISIT_OCCURRENCE<-Res.m.1
+    Res.my$VISIT_OCCURRENCE<-Res.my.1
+    Res.dates$VISIT_OCCURRENCE<-Res.d.1
+    rm(Res.1, Res.val.1, Res.o.1, Res.m.1, Res.my.1, Res.d.1)
+  }
+  
+  if ("EVENTS" %in% names(tables_list)){
+    Res.2<-list()
+    Res.val.2<-list()
+    Res.o.2<-list()
+    Res.m.2<-list()
+    Res.my.2<-list()
+    Res.d.2<-list()
+    w<-1
+    z<-1
+    i<-1
+    
+    for (i in 1:length(tables_list$EVENTS)){
+      df<-fread(paste(path_dir, tables_list$EVENTS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+  
+      Res.d.2[[w]]<-data.table(table_name="EVENTS", table_directory=tables_list$EVENTS[i], dates_check(dt=df, date_var1 = "start_date_record", date_var2 = "end_date_record", date_var3 = NULL))
+      
+      var<-total_var[table_name=="EVENTS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="EVENTS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      b<-data.table(table_name="EVENTS",table_directory=tables_list$EVENTS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)
+     } else {
+       list_values<-NULL
+     }
+      
+      #Save results for empty check and values check
+      Res.2[[w]]<-data.table(table_name="EVENTS",empty_check(df))
+      Res.val.2[[w]]<-list_values
+      Res.o.2[[w]]<-data.table(table_name="EVENTS", missing_overall(df))
+      Res.m.2[[w]]<-data.table(table_name="EVENTS", missing_meaning(df, "meaning_of_event"))
+      Res.my.2[[w]]<-data.table(table_name="EVENTS", missing_meaning_year(df, "meaning_of_event", "start_date_record"))
+      w<-w+1
+      rm(df)
+    }
+    
+    Res$EVENTS<-Res.2
+    Res.values$EVENTS<-Res.val.2
+    Res.overall$EVENTS<-Res.o.2
+    Res.meaning$EVENTS<-Res.m.2
+    Res.my$EVENTS<-Res.my.2
+    Res.dates$EVENTS<-Res.d.2
+    rm(Res.2, Res.val.2, Res.o.2, Res.m.2, Res.my.2, Res.d.2)
+  }
+  
+  if ("MEDICINES" %in% names(tables_list)){
+    Res.3<-list()
+    Res.val.3<-list()
+    Res.o.3<-list()
+    Res.m.3<-list()
+    Res.my.3<-list()
+    Res.d.3<-list()
+    w<-1
+    z<-1
+    i<-1
+    
+    for (i in 1:length(tables_list$MEDICINES)){
+      df<-fread(paste(path_dir, tables_list$MEDICINES[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+    
+      Res.d.3[[w]]<-data.table(table_name="MEDICINES", table_directory=tables_list$MEDICINES[i], dates_check(dt=df, date_var1 = "date_dispensing", date_var2 = "date_prescription", date_var3 = NULL))
+      
+      var<-total_var[table_name=="MEDICINES", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="MEDICINES", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="MEDICINES",table_directory=tables_list$MEDICINES[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.3[[w]]<-data.table(table_name="MEDICINES",empty_check(df))
+      Res.val.3[[w]]<-list_values
+      Res.o.3[[w]]<-data.table(table_name="MEDICINES", missing_overall(df))
+      Res.m.3[[w]]<-data.table(table_name="MEDICINES", missing_meaning(df, "meaning_of_drug_record"))
+      Res.my.3[[w]]<-data.table(table_name="MEDICINES", missing_mean_year_med.vac(df, "meaning_of_drug_record", date_var1 ="date_dispensing", date_var2 = "date_prescription"))
+      w<-w+1
+      rm(df)
+      }
+    Res$MEDICINES<-Res.3
+    Res.values$MEDICINES<-Res.val.3
+    Res.overall$MEDICINES<-Res.o.3
+    Res.meaning$MEDICINES<-Res.m.3
+    Res.my$MEDICINES<-Res.my.3
+    Res.dates$MEDICINES<-Res.d.3
+    rm(Res.3, Res.val.3, Res.o.3, Res.m.3, Res.my.3, Res.d.3)
+  }
+  
+  if ("PROCEDURES" %in% names(tables_list)){
+    Res.4<-list()
+    Res.val.4<-list()
+    Res.o.4<-list()
+    Res.m.4<-list()
+    Res.my.4<-list()
+    Res.d.4<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$PROCEDURES)){
+      df<-fread(paste(path_dir, tables_list$PROCEDURES[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+
+      Res.d.4[[w]]<-data.table(table_name="PROCEDURES", table_directory=tables_list$PROCEDURES[i], dates_check(dt=df, date_var1 = "procedure_date", date_var2 = NULL, date_var3 = NULL))
+
+      var<-total_var[table_name=="PROCEDURES", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="PROCEDURES", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="PROCEDURES",table_directory=tables_list$PROCEDURES[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.4[[w]]<-data.table(table_name="PROCEDURES",empty_check(df))
+      Res.val.4[[w]]<-list_values
+      Res.o.4[[w]]<-data.table(table_name="PROCEDURES", missing_overall(df))
+      Res.m.4[[w]]<-data.table(table_name="PROCEDURES", missing_meaning(df, "meaning_of_procedure"))
+      Res.my.4[[w]]<-data.table(table_name="PROCEDURES", missing_meaning_year(df, "meaning_of_procedure", "procedure_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$PROCEDURES<-Res.4
+    Res.values$PROCEDURES<-Res.val.4
+    Res.overall$PROCEDURES<-Res.o.4
+    Res.meaning$PROCEDURES<-Res.m.4
+    Res.my$PROCEDURES<-Res.my.4
+    Res.dates$PROCEDURES<-Res.d.4
+    rm(Res.4, Res.val.4, Res.o.4, Res.m.4, Res.my.4, Res.d.4)
+  }
+  
+  if ("VACCINES" %in% names(tables_list)){
+    Res.5<-list()
+    Res.val.5<-list()
+    Res.o.5<-list()
+    Res.m.5<-list()
+    Res.my.5<-list()
+    Res.d.5<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$VACCINES)){
+      df<-fread(paste(path_dir, tables_list$VACCINES[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+  
+      Res.d.5[[w]]<-data.table(table_name="VACCINES", table_directory=tables_list$VACCINES[i], dates_check(dt=df, date_var1 = "vx_record_date", date_var2 = "vx_admin_date", date_var3 = NULL))
+      
+      var<-total_var[table_name=="VACCINES", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="VACCINES", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="VACCINES",table_directory=tables_list$VACCINES[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.5[[w]]<-data.table(table_name="VACCINES",empty_check(df))
+      Res.val.5[[w]]<-list_values
+      Res.o.5[[w]]<-data.table(table_name="VACCINES", missing_overall(df))
+      Res.m.5[[w]]<-data.table(table_name="VACCINES", missing_meaning(df, "meaning_of_vx_record"))
+      Res.my.5[[w]]<-data.table(table_name="VACCINES", missing_mean_year_med.vac(df, "meaning_of_vx_record", date_var1 ="vx_admin_date", date_var2 = "vx_record_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$VACCINES<-Res.5
+    Res.values$VACCINES<-Res.val.5
+    Res.overall$VACCINES<-Res.o.5
+    Res.meaning$VACCINES<-Res.m.5
+    Res.my$VACCINES<-Res.my.5
+    Res.dates$VACCINES<-Res.d.5
+    rm(Res.5, Res.val.5, Res.o.5, Res.m.5, Res.my.5, Res.d.5)
+  }
+  
+  if ("MEDICAL_OBSERVATIONS" %in% names(tables_list)){
+    Res.6<-list()
+    Res.val.6<-list()
+    Res.o.6<-list()
+    Res.m.6<-list()
+    Res.my.6<-list()
+    Res.d.6<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$MEDICAL_OBSERVATIONS)){
+      df<-fread(paste(path_dir, tables_list$MEDICAL_OBSERVATIONS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+      Res.d.6[[w]]<-data.table(table_name="MEDICAL_OBSERVATIONS", table_directory=tables_list$MEDICAL_OBSERVATIONS[i], dates_check(dt=df, date_var1 = "mo_date", date_var2 = NULL, date_var3 = NULL))
+      
+      var<-total_var[table_name=="MEDICAL_OBSERVATIONS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="MEDICAL_OBSERVATIONS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="MEDICAL_OBSERVATIONS",table_directory=tables_list$MEDICAL_OBSERVATIONS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value) } else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.6[[w]]<-data.table(table_name="MEDICAL_OBSERVATIONS",empty_check(df))
+      Res.val.6[[w]]<-list_values
+      Res.o.6[[w]]<-data.table(table_name="MEDICAL_OBSERVATIONS", missing_overall(df))
+      Res.m.6[[w]]<-data.table(table_name="MEDICAL_OBSERVATIONS", missing_meaning(df, "mo_meaning"))
+      Res.my.6[[w]]<-data.table(table_name="MEDICAL_OBSERVATIONS", missing_meaning_year(df, "mo_meaning", "mo_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$MEDICAL_OBSERVATIONS<-Res.6
+    Res.values$MEDICAL_OBSERVATIONS<-Res.val.6
+    Res.overall$MEDICAL_OBSERVATIONS<-Res.o.6
+    Res.meaning$MEDICAL_OBSERVATIONS<-Res.m.6
+    Res.my$MEDICAL_OBSERVATIONS<-Res.my.6
+    Res.dates$MEDICAL_OBSERVATIONS<-Res.d.6
+    rm(Res.6, Res.val.6, Res.o.6, Res.m.6, Res.my.6, Res.d.6)
+  }
+  
+  if ("EUROCAT" %in% names(tables_list)){
+    Res.7<-list()
+    Res.val.7<-list()
+    Res.o.7<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$EUROCAT)){
+      df<-fread(paste(path_dir, tables_list$EUROCAT[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+      var<-total_var[table_name=="EUROCAT", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="EUROCAT", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="EUROCAT",table_directory=tables_list$EUROCAT[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.7[[w]]<-data.table(table_name="EUROCAT",empty_check(df))
+      Res.val.7[[w]]<-list_values
+      Res.o.7[[w]]<-data.table(table_name="EUROCAT", missing_overall(df))
+      w<-w+1
+      rm(df)
+    }
+    Res$EUROCAT<-Res.7
+    Res.values$EUROCAT<-Res.val.7
+    Res.overall$EUROCAT<-Res.o.7
+    rm(Res.7, Res.val.7, Res.o.7)
+  }
+  
+  if ("EUROmediCAT" %in% names(tables_list)){
+    Res.7<-list()
+    Res.val.7<-list()
+    Res.o.7<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$EUROmediCAT)){
+      df<-fread(paste(path_dir, tables_list$EUROmediCAT[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+      var<-total_var[table_name=="EUROmediCAT", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="EUROmediCAT", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="EUROCAT",table_directory=tables_list$EUROmediCAT[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.7[[w]]<-data.table(table_name="EUROCAT",empty_check(df))
+      Res.val.7[[w]]<-list_values
+      Res.o.7[[w]]<-data.table(table_name="EUROCAT", missing_overall(df))
+      w<-w+1
+      rm(df)
+    }
+    Res$EUROCAT<-Res.7
+    Res.values$EUROCAT<-Res.val.7
+    Res.overall$EUROCAT<-Res.o.7
+    rm(Res.7, Res.val.7, Res.o.7)
+  }
+  
+  if ("SURVEY_ID" %in% names(tables_list)){
+    Res.8<-list()
+    Res.val.8<-list()
+    Res.o.8<-list()
+    Res.m.8<-list()
+    Res.my.8<-list()
+    Res.d.8<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$SURVEY_ID)){
+      df<-fread(paste(path_dir, tables_list$SURVEY_ID[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+  
+      
+      Res.d.8[[w]]<-data.table(table_name="SURVEY_ID", table_directory=tables_list$SURVEY_ID[i], dates_check(dt=df, date_var1 = "survey_date", date_var2 = NULL, date_var3 = NULL))
+      
+      var<-total_var[table_name=="SURVEY_ID", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="SURVEY_ID", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="SURVEY_ID",table_directory=tables_list$SURVEY_ID[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.8[[w]]<-data.table(table_name="SURVEY_ID",empty_check(df))
+      Res.val.8[[w]]<-list_values
+      Res.o.8[[w]]<-data.table(table_name="SURVEY_ID", missing_overall(df))
+      Res.m.8[[w]]<-data.table(table_name="SURVEY_ID", missing_meaning(df, "survey_meaning"))
+      Res.my.8[[w]]<-data.table(table_name="SURVEY_ID", missing_meaning_year(df, "survey_meaning", "survey_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$SURVEY_ID<-Res.8
+    Res.values$SURVEY_ID<-Res.val.8
+    Res.overall$SURVEY_ID<-Res.o.8
+    Res.meaning$SURVEY_ID<-Res.m.8
+    Res.my$SURVEY_ID<-Res.my.8
+    Res.dates$SURVEY_ID<-Res.d.8
+    rm(Res.8, Res.val.8, Res.o.8, Res.m.8, Res.my.8, Res.d.8)
+  }
+  
+  if ("SURVEY_OBSERVATIONS" %in% names(tables_list)){
+    Res.9<-list()
+    Res.val.9<-list()
+    Res.o.9<-list()
+    Res.m.9<-list()
+    Res.my.9<-list()
+    Res.d.9<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$SURVEY_OBSERVATIONS)){
+      df<-fread(paste(path_dir, tables_list$SURVEY_OBSERVATIONS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+      Res.d.9[[w]]<-data.table(table_name="SURVEY_OBSERVATIONS", table_directory=tables_list$SURVEY_OBSERVATIONS[i], dates_check(dt=df, date_var1 = "so_date", date_var2 = NULL, date_var3 = NULL))
+      
+      var<-total_var[table_name=="SURVEY_OBSERVATIONS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="SURVEY_OBSERVATIONS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="SURVEY_OBSERVATIONS",table_directory=tables_list$SURVEY_OBSERVATIONS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.9[[w]]<-data.table(table_name="SURVEY_OBSERVATIONS",empty_check(df))
+      Res.val.9[[w]]<-list_values
+      Res.o.9[[w]]<-data.table(table_name="SURVEY_OBSERVATIONS", missing_overall(df))
+      Res.m.9[[w]]<-data.table(table_name="SURVEY_OBSERVATIONS", missing_meaning(df, "so_meaning"))
+      Res.my.9[[w]]<-data.table(table_name="SURVEY_OBSERVATIONS", missing_meaning_year(df, "so_meaning", "so_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$SURVEY_OBSERVATIONS<-Res.9
+    Res.values$SURVEY_OBSERVATIONS<-Res.val.9
+    Res.overall$SURVEY_OBSERVATIONS<-Res.o.9
+    Res.meaning$SURVEY_OBSERVATIONS<-Res.m.9
+    Res.my$SURVEY_OBSERVATIONS<-Res.my.9
+    Res.dates$SURVEY_OBSERVATIONS<-Res.d.9
+    rm(Res.9, Res.val.9, Res.o.9, Res.m.9, Res.my.9, Res.d.9)
+  }
+  
+  if ("PERSONS" %in% names(tables_list)){
+    Res.10<-list()
+    Res.val.10<-list()
+    Res.o.10<-list()
+    Res.y.10<-list()
+    Res.d.p<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in length(tables_list$PERSONS):1){
+      df<-fread(paste(path_dir, tables_list$PERSONS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+ 
+      Res.d.p[[w]]<-data.table(table_name="PERSONS", table_directory=tables_list$PERSONS[i], 
+                               dates_check_person(dt=df, year1="year_of_birth", month1="month_of_birth", day1="day_of_birth", year2="year_of_death", month2="month_of_death", day2="day_of_death"))
+      
+      var<-total_var[table_name=="PERSONS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="PERSONS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="PERSONS",table_directory=tables_list$PERSONS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.10[[w]]<-data.table(table_name="PERSONS",empty_check(df))
+      Res.val.10[[w]]<-list_values
+      Res.o.10[[w]]<-data.table(table_name="PERSONS", missing_overall(df))
+      Res.y.10[[w]]<-data.table(table_name="PERSONS", missing_year_persons(df, year_bd="year_of_birth"))
+      w<-w+1
+      rm(df)
+    }
+    Res$PERSONS<-Res.10
+    Res.values$PERSONS<-Res.val.10
+    Res.overall$PERSONS<-Res.o.10
+    Res.year$PERSONS<-Res.y.10
+    Res.dates.person<-Res.d.p
+    rm(Res.10, Res.val.10, Res.o.10, Res.y.10, Res.d.p)
+  }
+  
+  if ("OBSERVATION_PERIODS" %in% names(tables_list)){
+    Res.11<-list()
+    Res.val.11<-list()
+    Res.o.11<-list()
+    Res.m.11<-list()
+    Res.my.11<-list()
+    Res.d.11<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$OBSERVATION_PERIODS)){
+      df<-fread(paste(path_dir, tables_list$OBSERVATION_PERIODS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+      Res.d.11[[w]]<-data.table(table_name="OBSERVATION_PERIODS", table_directory=tables_list$OBSERVATION_PERIODS[i], dates_check(dt=df, date_var1 = "op_start_date", date_var2 = "op_end_date", date_var3 = NULL))
+      
+      var<-total_var[table_name=="OBSERVATION_PERIODS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="OBSERVATION_PERIODS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="OBSERVATION_PERIODS",table_directory=tables_list$OBSERVATION_PERIODS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.11[[w]]<-data.table(table_name="OBSERVATION_PERIODS",empty_check(df))
+      Res.val.11[[w]]<-list_values
+      Res.o.11[[w]]<-data.table(table_name="OBSERVATION_PERIODS", missing_overall(df))
+      Res.m.11[[w]]<-data.table(table_name="OBSERVATION_PERIODS", missing_meaning(df, "op_meaning"))
+      Res.my.11[[w]]<-data.table(table_name="OBSERVATION_PERIODS", missing_meaning_year(df, "op_meaning", "op_start_date"))
+      w<-w+1
+      rm(df)
+      }
+    Res$OBSERVATION_PERIODS<-Res.11
+    Res.values$OBSERVATION_PERIODS<-Res.val.11
+    Res.overall$OBSERVATION_PERIODS<-Res.o.11
+    Res.meaning$OBSERVATION_PERIODS<-Res.m.11
+    Res.my$OBSERVATION_PERIODS<-Res.my.11
+    Res.dates$OBSERVATION_PERIODS<-Res.d.11
+    rm(Res.11, Res.val.11, Res.o.11, Res.m.11, Res.my.11, Res.d.11)
+  }
+  
+  if ("PERSON_RELATIONSHIPS" %in% names(tables_list)){
+    Res.12<-list()
+    Res.val.12<-list()
+    Res.o.12<-list()
+    Res.m.12<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$PERSON_RELATIONSHIPS)){
+      df<-fread(paste(path_dir, tables_list$PERSON_RELATIONSHIPS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+       var<-total_var[table_name=="PERSON_RELATIONSHIPS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="PERSON_RELATIONSHIPS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="PERSON_RELATIONSHIPS",table_directory=tables_list$PERSON_RELATIONSHIPS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+      
+      if (nrow(b) !=0){
+        value<-rep(NA, nrow(b))
+        
+        for (z in 1:nrow(b)){
+          value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+        }
+        list_values<-data.table(b, values=value)} else {
+          list_values<-NULL
+        }
+      
+      
+      #Save results for empty check and values check
+      Res.12[[w]]<-data.table(table_name="PERSON_RELATIONSHIPS",empty_check(df))
+      Res.val.12[[w]]<-list_values
+      Res.o.12[[w]]<-data.table(table_name="PERSON_RELATIONSHIPS", missing_overall(df))
+      Res.m.12[[w]]<-data.table(table_name="PERSON_RELATIONSHIPS", missing_meaning(df, "meaning_of_relationship"))
+      w<-w+1
+      rm(df)
+    }
+    Res$PERSON_RELATIONSHIPS<-Res.12
+    Res.values$PERSON_RELATIONSHIPS<-Res.val.12
+    Res.overall$PERSON_RELATIONSHIPS<-Res.o.12
+    Res.meaning$PERSON_RELATIONSHIPS<-Res.m.12
+    rm(Res.12, Res.val.12, Res.o.12, Res.m.12)
+  }
+  
+  if ("PRODUCTS" %in% names(tables_list)){
+    Res.13<-list()
+    Res.val.13<-list()
+    Res.o.13<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$PRODUCTS)){
+      df<-fread(paste(path_dir, tables_list$PRODUCTS[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+ 
+      var<-total_var[table_name=="PRODUCTS", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="PRODUCTS", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      
+      b<-data.table(table_name="PRODUCTS",table_directory=tables_list$PRODUCTS[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else{
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.13[[w]]<-data.table(table_name="PRODUCTS",empty_check(df))
+      Res.val.13[[w]]<-list_values
+      Res.o.13[[w]]<-data.table(table_name="PRODUCTS", missing_overall(df))
+      w<-w+1
+      rm(df)
+    }
+    Res$PRODUCTS<-Res.13
+    Res.values$PRODUCTS<-Res.val.13
+    Res.overall$PRODUCTS<-Res.o.13
+    rm(Res.13, Res.val.13, Res.o.13)
+  }
+  
+  if ("CDM_SOURCE" %in% names(tables_list)){
+    Res.14<-list()
+    Res.val.14<-list()
+    Res.o.14<-list()
+    Res.d.14<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$CDM_SOURCE)){
+      df<-fread(paste(path_dir, tables_list$CDM_SOURCE[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+      
+  
+      Res.d.14[[w]]<-data.table(table_name="CDM_SOURCE", table_directory=tables_list$CDM_SOURCE[i], dates_check(dt=df, date_var1 = "date_creation", date_var2 = NULL, date_var3 = NULL))
+      
+      var<-total_var[table_name=="CDM_SOURCE", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="CDM_SOURCE", .(variable_name)] #Get all vocabulary variables
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]] #Check which of the variables is completely missing
+      b<-data.table(voc_var,t(a))#transpose
+      setnames(b, "V1", "empty")
+      b<-data.table(table_name="CDM_SOURCE",table_directory=tables_list$CDM_SOURCE[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)
+     } else {
+       list_values<-NULL
+     }
+      
+      #Save results for empty check and values check
+      Res.14[[w]]<-data.table(table_name="CDM_SOURCE",empty_check(df))
+      Res.val.14[[w]]<-list_values
+      Res.o.14[[w]]<-data.table(table_name="CDM_SOURCE", missing_overall(df))
+      w<-w+1
+      rm(df)
+      }
+    Res$CDM_SOURCE<-Res.14
+    Res.values$CDM_SOURCE<-Res.val.14
+    Res.overall$CDM_SOURCE<-Res.o.14
+    Res.dates$CDM_SOURCE<-Res.d.14
+    rm(Res.14, Res.val.14, Res.o.14, Res.d.14)
+  }
+  
+  if ("INSTANCE" %in% names(tables_list)){
+    Res.15<-list()
+    Res.val.15<-list()
+    Res.o.15<-list()
+    Res.d.15<-list()
+    w<-1
+    z<-1
+    i<-1
+    for (i in 1:length(tables_list$INSTANCE)){
+      df<-fread(paste(path_dir, tables_list$INSTANCE[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+      df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+   
+      Res.d.15[[w]]<-data.table(table_name="INSTANCE", table_directory=tables_list$INSTANCE[i], dates_check(dt=df, date_var1 = "date_when_data_last_updated", date_var2 = "since_when_data_complete", date_var3 = "up_to_when_data_complete"))
+      
+      var<-total_var[table_name=="INSTANCE", variable_name]
+      #Use for saving list_of_values
+      voc_var<-vocabulary_var[table_name=="INSTANCE", .(variable_name)]
+      a<-df[,lapply(.SD, FUN= function(x) all(is.na(x))), .SDcols=voc_var[["variable_name"]]]
+      b<-data.table(voc_var,t(a))
+      setnames(b, "V1", "empty")
+      b<-data.table(table_name="INSTANCE",table_directory=tables_list$INSTANCE[i], b)
+      b<-b[empty==FALSE] #remove empty var from list
+     
+     if (nrow(b) !=0){
+    value<-rep(NA, nrow(b))
+
+    for (z in 1:nrow(b)){
+  value[z]<- paste0(unique(na.omit(df[[b[z, variable_name]]])), collapse=" ")
+}
+      list_values<-data.table(b, values=value)} else {
+        list_values<-NULL
+      }
+      
+      #Save results for empty check and values check
+      Res.15[[w]]<-data.table(table_name="INSTANCE",empty_check(df))
+      Res.val.15[[w]]<-list_values
+      Res.o.15[[w]]<-data.table(table_name="INSTANCE", missing_overall(df))
+      w<-w+1
+      rm(df)
+      }
+    Res$INSTANCE<-Res.15
+    Res.values$INSTANCE<-Res.val.15
+    Res.overall$INSTANCE<-Res.o.15
+    Res.dates$INSTANCE<-Res.d.15
+    rm(Res.15, Res.val.15, Res.o.15, Res.d.15)
+  }
+  
+  #Remove empty list elements
+  Res<-compact(Res)
+  Res.values<-compact(Res.values)
+  Res.overall<-compact(Res.overall)
+  Res.meaning<-compact(Res.meaning)
+  Res.year<-compact(Res.year)
+  Res.my<-compact(Res.my)
+  Res.dates<-compact(Res.dates)
+  Res.dates.person<-compact(Res.dates.person)
+
+  if (length(Res.overall) !=0){
+  for(i in length(Res.overall):1){
+    Res.overall[[i]]<-do.call(rbind, Res.overall[[i]])
+  }}
+
+      if (length(Res.values) !=0){
+  for(i in length(Res.values):1){
+    Res.values[[i]]<-do.call(rbind, Res.values[[i]])
+  }}
+  
+        
+  if (length(Res.meaning) !=0){
+  for(i in length(Res.meaning):1){
+    Res.meaning[[i]]<-do.call(rbind, Res.meaning[[i]])
+    }}
+    
+  if(length(Res.year) !=0){
+  for(i in length(Res.year):1){
+    Res.year[[i]]<-do.call(rbind, Res.year[[i]])
+    }}
+  
+  if (length(Res.my)){
+  for(i in length(Res.my):1){
+    Res.my[[i]]<-do.call(rbind, Res.my[[i]])
+    }}
+  
+  if (length(Res.dates) !=0){
+  for(i in length(Res.dates):1){
+    Res.dates[[i]]<-do.call(rbind, Res.dates[[i]])
+    }}
+  
+  if (length(Res.dates.person) !=0){
+  Res.dates.person<-do.call(rbind, Res.dates.person)}
+
+  output<-list("EMPTY"=Res, "VALUES"=Res.values, "MISS_OVERALL"=Res.overall, "MISS_MEANING"=Res.meaning, "MISS_YEAR"=Res.year, 
+               "MISS_MEAN_YEAR"=Res.my, "DATES"=Res.dates, "DATES_PERSON"=Res.dates.person)
+  return(output)
+}
+
+```
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions for Step 1 to Step 3:  
+**1.** All variables need to be present as column names even if empty.  
+**2.** Variable names need to be written in lowercase.  
+**3.** All mandatory variables need to be present.  
+**4.** Presence of non-mandatory variables should match the information that has been filled out in the metadata table.  
+**5.** All vocabularies need to be filled out in the metadata table.  
+**6.** Variables should contain only allowable vocabulary values.  
+**7.** All date parts need to contain allowable values where year from 1995-present, month 01-12 and day 01-31 (with some exceptions).  
+**8.** Dates need to be written in the right format(8 characters).  
+**9.** All conventions need to be statisfied.  
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+## 1. Table formatting 
+
+<br>
+
+#### **Number of fields**
+
+Check if all rows of the files contain the same number of fields.  
+The `first_row_error` variable shows the first row of the csv file that contains an irregular number of fields.  
+
+```{r output_fields_check, echo=FALSE}
+
+#Output for fields check
+if (nrow(Res.fields)!=0){
+  datatable(data.table(Res.fields), option=list(scrollX=TRUE))
+} else {print("There is no issue with the number of fields for all files.")}
+```
+
+#### **Non-numeric elements in numeric variables**
+
+Check if numeric variables contain non-numeric elements.    
+   
+The tables and variables that undergo this check are:    
+**MEDICINES:** disp_number_medicinal_product, presc_quantity_per_day, presc_duration_days   
+**PRODUCTS:** unit_of_presentation_num, subst1_amount_per_form, subst2_amount_per_form, subst3_amount_per_form, subst1_concentration, subst2_concentration, subst3_concentration, concentration_total_content    
+**CDM_SOURCE:** instance_number    
+**EUROCAT/EUROmediCAT:** weight, gestlength, agemo, bmi, agedisc, hba1c     
+
+```{r output_format_check, echo=FALSE}
+#Output for fields check
+if (Res.format[error==TRUE,.N]>0){
+datatable(data.table(Res.format[error==TRUE], comment="Non.numeric shows number of non-numeric elements."), option=list(scrollX=TRUE))
+} else {
+  print("All numeric variables for all tables present in the working directory contain only numeric elements.")
+}
+```
+<br>
+
+#### **Presence of variables check**
+
+Check if variables are present as names in the CDM tables irrespective of their content.
+
+```{r output_presence_check, echo=FALSE}
+#Output for presence check
+if (nrow(Res.presence)!=0){
+  datatable(data.table(Res.presence, comment="The variable is missing as column in the current table."), option=list(scrollX=TRUE))
+} else {print("All variables are present as columns for all tables included in the working directory.")}
+```
+
+<br>
+
+#### **Lower-case check**
+
+Check if column names are written in lower case and spelled correctly.
+
+```{r run_lowercase, echo=FALSE}
+
+if(nrow(Res.lowercase[lowercase==FALSE]) == 0){
+  print("All variables are written in lowercase.")
+} else {
+  datatable(Res.lowercase[lowercase==FALSE],option=list(scrollX=TRUE))
+}
+```
+
+
+<br>
+
+```{r run_whole_script, include=FALSE}
+#Result for empty_values check
+#Run script
+Results<-level_1_check(tables_list =actual_tables.r,tables_CDM =  tables_CDM)
+
+```
+
+```{r include=FALSE}
+rm(level_1_check, missing_mean_year_med.vac,missing_meaning,missing_meaning_year,missing_overall, missing_year, missing_year_persons, dates_check, dates_check_person)
+```
+
+```{r get_empty_var_list, include=FALSE}
+#Function that will combine retrieve all empty columns for all tables
+empty_datatable<-function(Res){
+#Combine list elements 
+for(i in 1:length(Res)){
+  Res[[i]]<-do.call(rbind, Res[[i]])
+}
+  
+
+Res.t<-do.call(rbind, Res)
+#Create unique combination of table_name and variable_name
+Res.t$variable<-paste(Res.t$table_name, Res.t$variable_name, sep=":")
+
+variable.t<-rep(NA, length(unique(Res.t$variable)))
+empty.t<-rep(NA, length(unique(Res.t$variable)))
+
+#Check if a variable is empty after combine different subtables if present
+for (i in 1:length(unique(Res.t$variable))){
+  if(length(unique(Res.t[variable== unique(Res.t$variable)[i]][,empty]))==1){
+    if (unique(Res.t[variable== unique(Res.t$variable)[i]][,empty])==TRUE){
+      variable.t[i]<-unique(Res.t[variable== unique(Res.t$variable)[i]][,variable])
+      empty.t[i]<-TRUE
+    } else {
+      variable.t[i]<-unique(Res.t[variable== unique(Res.t$variable)[i]][,variable])
+      empty.t[i]<-FALSE
+    }
+  } else {
+    variable.t[i]<-unique(Res.t[variable== unique(Res.t$variable)[i]][,variable])
+    empty.t[i]<-FALSE
+  }
+}
+
+Res.empty<-data.table(cbind(reshape2::colsplit(variable.t, ":", names = c("table_name", "variable_name")),  "empty"=empty.t))
+return(Res.empty)
+}
+```
+
+```{r save_empty_var_list, include=FALSE}
+if (length(Results$EMPTY) !=0){
+empty_list_var<-empty_datatable(Res= Results$EMPTY)
+empty_list_var<-empty_list_var[variable_name != "count_format1"]
+empty_list_var<-empty_list_var[variable_name != "count_format2"]
+
+} else {
+  empty_list_var<-NULL
+}
+```
+
+```{r save_values_list, include=FALSE}
+if (length(Results$VALUES)!=0){
+values_list<-do.call(rbind,Results$VALUES)
+} 
+```
+
+```{r include=FALSE}
+rm(empty_check)
+```
+
+#### **Presence of mandatory variables**
+
+Check if mandatory variables are present in the current table with at least one observation.
+
+
+```{r run_mandatory, echo=FALSE}
+if (length(actual_tables.r) !=0){
+  Res.mandatory<-mandatory_check(tables_list=actual_tables.r, tables_CDM=tables_CDM)
+} else {
+    print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+```
+
+```{r include=FALSE}
+rm(mandatory_check)
+```
+
+```{r results_mandatory, echo=FALSE}
+if(length(actual_tables.r) !=0){
+#The output of mandatory variables check.
+if(is.null(Res.mandatory)){
+  print("All mandatory variables are present for all the tables in the working directory.")
+} else {
+  datatable(data.table(Res.mandatory, comment="This variable is completely empty."), option=list(scrollX=TRUE))
+}
+}
+
+```
+
+<br>
+
+#### **Comparison with metadata table**
+
+Check if non-mandatory variables present in the current table are in agreement with the information in the metadata table.
+
+```{r run_nonmandatory_check, echo= FALSE}
+#Run script
+if (length(actual_tables.r) !=0){
+Res.non_mandatory<-non.mandatory_check(actual_tables.r)
+} else {
+      print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+
+```
+
+```{r include=FALSE}
+rm(non.mandatory_check)
+```
+
+```{r results_nonmandatory, echo=FALSE}
+#The output for metadata check
+if (length(actual_tables.r) !=0){
+if (is.null(Res.non_mandatory)){
+  print("The presence of all non-mandatory table for each CDM is according to the METADATA table.")
+} else {
+  datatable(Res.non_mandatory, option=list(scrollX=TRUE))
+}
+}
+```
+
+<br>
+
+#### **Vocabulary check**
+
+Check if all vocabularies are present in the metadata table.
+
+```{r results_vocabulary, echo=FALSE}
+if (length(actual_tables.r) !=0){
+Res.vocabulary<-vocabulary_check(actual_tables.r)
+} else {
+        print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+```
+
+```{r include=FALSE}
+rm(vocabulary_check)
+```
+
+```{r output_vocabulary, echo=FALSE}
+if(length(actual_tables.r) !=0){
+#The output for vocabularies check
+#Output
+if(is.null(Res.vocabulary)){
+  print("All vocabularies are present in the METADATA table.")
+} else {
+  datatable(Res.vocabulary, option=list(scrollX=TRUE))
+}
+}
+
+```
+
+
+#### **Values check**
+
+Check if fixed vocabularies are filled out accordingly.
+<br>
+
+Explanations:  
+**a.** If `error` is set to TRUE means contains not allowable values. Fix the table in your working directory <span style="color: red;">(red)</span>.      
+**b.** If `fixed_vocabulary` contains extra values compared with `values_table` will set the `error` column to "warning". Double check if the information in the table is correct and fix the error if present <span style="color: purple;">(purple)</span>. 
+
+```{r output_fixed_voc_check, echo=FALSE}
+if (length(actual_tables.r) !=0){
+#The output for values check
+#Run script
+Res.fixed<-fixed_voc_check(tables_list, tables_CDM)
+Res.fixed<-Res.fixed[!is.na(table_directory)]
+
+if(nrow(Res.fixed[error==TRUE | error=="warning"])==0){
+  print("Fixed vocabularies are filled out accordingly for all variables.")
+} else {
+Res.fixed.f<-Res.fixed[error==TRUE | error=="warning"]
+Res.fixed.f[error==TRUE, format:=0]
+Res.fixed.f[error=="warning", format:=1]
+
+  datatable(Res.fixed.f, option=list(scrollX=TRUE, columnDefs = list(list(targets = 7, visible = FALSE)))) %>% formatStyle(
+  'table_name', 'format',
+  color = styleEqual(c(0,1), c('red', 'purple'))
+) %>% formatStyle(
+  'table_name', 'format',
+  color = styleEqual(c(0,1), c('bold', 'bold'))
+)
+}
+
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+ 
+```
+
+```{r include=FALSE}
+rm(fixed_voc_check)
+```
+
+<br> 
+
+Check if the list of values in the metadata table matches the values present in the current table.  
+<br>
+
+Explanations:  
+**a.** If `table_directory` and `values_tables` are empty but `values_metadata` is completed means that the table is not present in the working directory so there should be no data in the METADATA table. Fix the ETL if the variable should be present or remove this variable from the `list_of_values` in the METDATA table if it should be empty <span style="color: red;">(red)</span>.      
+**b.** If `values_table` is completed but `values_metadata` is empty please fix the METADATA table accordingly <span style="color: orange;">(orange)</span>.         
+**c.** If both `values_table` and `values_metadata` are completed means that the information doesn't match. Correct the table or the METADATA accordingly <span style="color: blue;">(blue)</span>.    
+**d.** If `values_metadata` contain extra values compared with `values_table` will set the `error` column to "warning". Double check if the information in the table or METADATA is correct and fix the error if present <span style="color: purple;">(purple)</span>. 
+
+```{r output_values_check, echo=FALSE}
+if (length(actual_tables.r) !=0){
+#The output for values check
+#Run script
+Res.values<-values_check(tables_list, tables_CDM)
+
+
+if(nrow(Res.values[error==TRUE | error=="warning"])==0){
+  print("The list of variables in the tables match the information in the METADATA table.")
+} else {
+  Res.values.f<-Res.values[error==TRUE | error=="warning"]
+Res.values.f[(is.na(table_directory) & !(is.na(values_metadata))), format:=0]
+Res.values.f[(!(is.na(values_table)) & is.na(values_metadata)), format:=1]
+Res.values.f[(!(is.na(values_table)) & !(is.na(values_metadata))), format:=2]
+Res.values.f[error=="warning", format:=3]
+  datatable(Res.values.f, option=list(scrollX=TRUE, columnDefs = list(list(targets = 7, visible = FALSE)))) %>% formatStyle(
+  'table_name', 'format',
+  color = styleEqual(c(0,1,2,3), c('red', 'orange', 'blue', 'purple'))
+) %>% formatStyle(
+  'table_name', 'format',
+  color = styleEqual(c(0,1,2,3), c('bold', 'bold', 'bold', 'bold'))
+)
+}
+
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+ 
+
+```
+
+```{r include=FALSE}
+rm(values_check)
+```
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+## 2. Dates check
+
+<br>
+
+Check if date variables have the correct format and contain only allowable values for year, month and day.   
+Report if any of the databases contain dates in the future.  
+
+<br>
+
+Explanations:  
+**a.** If a date variable contains errors in its format, those dates will be removed from further analysis (allowable values check and counts of future dates).  
+**b.** All errors are reported as counts of errors for each table in the directory.  
+**c.** If a date variable does not contain any errors it will not be displayed in the table below.  
+**d.** If error_year is smaller than future_dates that means that for those extra future dates the year of the date variable that contains the error is equal to the present year, but the day or month can be in the future.
+<br>
+
+Allowable values:  
+**a.** year: 1995-present (in some cases such as: dates that show follow up, future dates are allowed but they will still be counted in error_year)  
+**b.** month: 01-12  
+**c.** day: 01-31  
+
+The tables that will not undergo this analysis even if present in the directory due to absence of date variables are:  
+
+**a.** PERSON_RELATIONSHIPS    
+**b.** PRODUCTS  
+
+```{r get_check_dates_results, echo=FALSE}
+#Run script for dates check
+if (length(actual_tables.r) !=0){
+Res.dates<-Results$DATES
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+
+```
+
+Based on errors in future or past dates error_year will be colored:  
+**a.** <span style="color: blue;">blue</span>: years before 1995 and in the future  
+**b.** <span style="color: red;">red</span>: years before 1995 only  
+**c.** <span style="color: green;">green</span>: years in the future only  
+**d.** <span style="color: black;">black</span>: no errors  
+
+```{r output_check_dates, echo=FALSE}
+if (length(actual_tables.r) !=0){
+if(length(Res.dates) !=0){
+#Output for dates check
+Res.dates<-do.call(rbind,Res.dates)
+#Create format variables that will be used to color error_year to distinguish between errors in past and future dates
+Res.dates[error_year>future_dates,format:=0]
+Res.dates[error_year==future_dates | error_year<future_dates, format:=1]
+Res.dates[error_year !=0 & future_dates==0, format:=2]
+Res.dates[error_year ==0, format:=3]
+if (nrow(Res.dates[error_format!=0 | error_year!=0 | error_month!=0 | error_day!=0 | future_dates!=0])==0){
+  print("There are no errors in format and allowable values for date variables.")
+} else {
+  datatable(Res.dates[error_format!=0 | error_year!=0 | error_month!=0 | error_day!=0 | future_dates!=0], option=list(scrollX=TRUE, 
+            columnDefs = list(list(targets = 9, visible = FALSE)))) %>% formatStyle(
+  'error_year', 'format',
+  color = styleEqual(c(0,1,2,3), c('blue', 'green', 'red', 'black'))
+) %>% formatStyle(
+  'error_year', 'format',
+  color = styleEqual(c(0,1,2,3), c('bold', 'bold', 'bold', 'normal'))
+)
+}
+} else {
+  print("This check might not be performed in case all tables that contain a date variable included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again or ignore if only tables that do not contain date variables are provided.")
+}
+}
+```
+
+<br>
+
+Date checks for the PERSONS table are presented in a separate table due to the format of date variable.  
+N/A means that the check is not applicable for that particular variable.  
+
+```{r save_persons_check_date, include=FALSE}
+if (length(actual_tables.r) !=0){
+Res.date.p<-Results$DATES_PERSON
+}
+```
+
+```{r output_persons_check_dates, echo=FALSE}
+if (length(actual_tables.r) !=0){
+if(length(Res.date.p) !=0){
+datatable(Res.date.p,  option=list(scrollX=TRUE))
+} else {
+  print("The PERSONS table either is not provided or had an error in fields check, presence of variable or lowercase check.")
+}
+}
+```
+
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Missing data analysis
+
+<br>
+
+For easier navigation, in case there is missing data, the `table_name`, `variable_name` and `meaning` will be colored <span style="color: #76b82a ;"> **green** </span> .
+
+#### **Missing data overall**
+
+Missing data analysis is performed over all tables and for each variable.
+
+```{r combine_miss_overall, echo=FALSE}
+if (length(actual_tables.r)!=0){
+#Run script for missing data overall
+Res.overall<-Results$MISS_OVERALL
+
+#The argument will be the list produced by the step1_check(Res.overall)
+combine_miss_overall<-function(ls){
+  Res<-vector(mode="list", length=length(ls))
+  for (i in 1: length(ls)){
+    Res[[i]]<-ls[[i]][,lapply(.SD, sum), by=.(table_name, variable_name), .SDcols=c("count", "total")]
+  }
+  Res<-do.call(rbind,Res)
+  return(Res)
+}
+
+Res.overall<-combine_miss_overall(Res.overall)
+Res.overall<-Res.overall[variable_name!= "count_format1"]
+Res.overall<-Res.overall[variable_name!= "count_format2"]
+Res.overall<-Res.overall[variable_name!= "count_format3"]
+Res.overall<-Res.overall[variable_name!= "day_format1"]
+Res.overall<-Res.overall[variable_name!= "day_format2"]
+Res.overall<-Res.overall[variable_name!= "month_format1"]
+Res.overall<-Res.overall[variable_name!= "month_format2"]
+Res.overall<-Res.overall[variable_name!= "year_format1"]
+Res.overall<-Res.overall[variable_name!= "year_format2"]
+
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again.")
+}
+
+```
+
+
+```{r output_miss_overall, echo=FALSE}
+if (length(actual_tables.r)!=0 ){
+#Output for missing data overall
+Res.overall[, percentage:=round((count/total)*100, digits=1)]
+  
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.overall[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+if (length(actual_tables.r)!=0 ){
+  #Save results as .csv file
+write.csv(Res.overall, paste(step1to3_dir,"step1to3_missing_overall.csv",sep="") ,row.names = F)
+}
+
+  #Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.overall[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.overall[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.overall[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.overall.1<-Res.overall[count != "<5"]
+Res.overall.1[, count:= as.numeric(count)]
+Res.overall.1[, percentage:= as.numeric(percentage)]
+
+if (Res.overall[,.N] != 0){
+datatable(Res.overall, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+)
+}
+}
+if (length(actual_tables.r)!=0 ){
+  #Save results as .csv file
+write.csv(Res.overall, paste(step1to3_less,"step1to3_missing_overall_masked.csv",sep="") ,row.names = F)
+}
+```
+
+```{r graph_miss_overall, echo=FALSE, message=FALSE}
+if(length(actual_tables.r)!=0){
+  if (Res.overall.1[,.N] != 0){
+fig.overall<-vector(mode="list", length=length(unique(Res.overall.1[["table_name"]])))
+for(i in 1:length(unique(Res.overall.1[["table_name"]]))){
+  fig.overall[[i]]<-ggplotly(ggplot(Res.overall.1[table_name==unique(Res.overall.1[["table_name"]])[i]], aes(x = variable_name, y = percentage , label = percentage)) +
+                               geom_bar(stat = "identity", fill="#76b82a") +
+                               ggtitle(unique(Res.overall.1[["table_name"]])[i]) +
+                               xlab("Name of variable") +
+                               ylab("Percentage of missing")+
+                               theme(axis.text.x = element_text(angle = 45),
+                             axis.title.x = element_text(colour = "#76b82a"),
+                             axis.title.y = element_text(colour = "#76b82a"),
+                             plot.title = element_text(colour = "#76b82a")))
+}
+  }
+}
+```
+
+```{r display_graph_miss_overall, echo=FALSE}
+#Output for graphs
+if (length(actual_tables.r)!=0){
+  if (Res.overall.1[,.N] != 0){
+htmltools::tagList(list(fig.overall))
+  }
+}
+```
+<br>
+
+#### **Missing data stratified by meaning**
+
+Missing data analysis is stratified by the meaning variable when it is possible.  
+Tables that will not undergo this analysis(the meaning variable is not present) even if present in the directory are:  
+**a.** PERSONS   
+**b.** EUROCAT  
+**c.** PRODUCTS  
+**d.** CDM_SOURCE  
+**e.** INSTANCE  
+
+<br>
+
+
+```{r combine_miss_meaning, echo=FALSE}
+if(length(actual_tables.r)!=0){
+#Run script for missing data by meaning
+Res.meaning<-Results$MISS_MEANING
+
+
+combine_miss_mean<-function(ls){
+  Res<-vector(mode="list", length=length(ls))
+  for (i in 1: length(ls)){
+    Res[[i]]<-ls[[i]][,lapply(.SD, sum), by=.(table_name, variable_name, meaning), .SDcols=c("count", "total")]
+  }
+  Res<-do.call(rbind,Res)
+  return(Res)
+}
+if (length(Results$MISS_MEANING) !=0){
+Res.meaning<-combine_miss_mean(Res.meaning)
+Res.meaning<-Res.meaning[variable_name != "count_format1"]
+Res.meaning<-Res.meaning[variable_name != "count_format2"]
+Res.meaning<-Res.meaning[!(is.na(meaning))]
+Res.meaning<-Res.meaning[meaning!=""]
+
+} else {
+  print("This check might not be performed in case all tables that contain a meaning variable included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again. Ignore if only tables that do not conatin a meaning variable are present in the directory.")
+}
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again. Ignore if only tables that do not conatin a meaning variable are present in the directory.")
+}
+
+```
+
+```{r output_miss_meaning, echo=FALSE}
+if(length(actual_tables.r)!=0) {
+  if (length(Results$MISS_MEANING) !=0){
+#Output for missing data stratified by meaning
+Res.meaning[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.meaning[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+if(length(actual_tables.r)!=0) {
+  if (length(Results$MISS_MEANING) !=0){
+     if (length(Res.meaning != 0)){
+#Save results as .csv file
+write.csv(Res.meaning, paste(step1to3_dir,"step1to3_missing_meaning.csv",sep="") ,row.names = F)
+  }
+  }
+}
+  
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.meaning[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.meaning[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.meaning[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.meaning.1<-Res.meaning[count != "<5"]
+Res.meaning.1[, count:= as.numeric(count)]
+Res.meaning.1[, percentage:= as.numeric(percentage)]
+
+  if (Res.meaning[,.N] != 0){
+datatable(Res.meaning, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'meaning', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+)
+    }
+  }
+  }
+
+if(length(actual_tables.r)!=0) {
+  if (length(Results$MISS_MEANING) !=0){
+#Save results as .csv file
+write.csv(Res.meaning, paste(step1to3_less,"step1to3_missing_meaning_masked.csv",sep="") ,row.names = F)
+  }
+  }
+```
+
+```{r graph_miss_meaning, echo=FALSE, warning=FALSE, message= FALSE}
+#Graph for missing data by meaning(Save the graphs for each table as a separate list element)
+if(length(actual_tables.r)!=0) {
+  if (length(Results$MISS_MEANING) !=0){
+    if (Res.meaning.1[,.N] != 0){
+fig.meaning<-vector(mode="list", length=length(unique(Res.meaning.1[["table_name"]])))
+        for(i in 1:length(unique(Res.meaning.1[["table_name"]]))){
+  fig.meaning[[i]]<-ggplotly(ggplot(Res.meaning.1[table_name==unique(Res.meaning.1[["table_name"]])[i]], aes(x = variable_name, y = percentage, group=meaning)) +
+                               geom_line(aes(color=meaning)) + 
+                               geom_point(aes(color=meaning)) +
+                               ggtitle(unique(Res.meaning.1[["table_name"]])[i]) + 
+                               xlab("Name of variable") +
+                               ylab("Percentage of missing")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+      }
+    }
+  }
+}
+```
+
+```{r display_graph_miss_meaning, echo=FALSE}
+#Output for graphs
+if(length(actual_tables.r)!=0) {
+  if (length(Results$MISS_MEANING) !=0){
+    if (Res.meaning.1[,.N] != 0){
+htmltools::tagList(list(fig.meaning))
+    }
+  }
+}
+```
+
+<br>
+
+#### **Missing data stratified by year**
+
+Missing data analysis will be stratified only by year for:   
+**a.** PERSONS  
+
+<br>
+
+If years before 1890 or years in the future are present, they will be colored red.   
+
+```{r combine_miss_year, echo=FALSE}
+if (length(actual_tables.r)!=0){
+#Run script for missing data by year(PERSONS)
+Res.year<-Results$MISS_YEAR
+
+combine_miss_year<-function(ls){
+  Res<-vector(mode="list", length=length(ls))
+  for (i in 1: length(ls)){
+    Res[[i]]<-ls[[i]][,lapply(.SD, sum), by=.(table_name, variable_name, year), .SDcols=c("count", "total")]
+  }
+  Res<-do.call(rbind,Res)
+  return(Res)
+}
+
+if(length(Res.year) !=0){
+Res.year<-combine_miss_year(Res.year)
+Res.year<-Res.year[variable_name!="count_format1"]
+Res.year<-Res.year[variable_name!="count_format2"]
+Res.year<-Res.year[variable_name!= "count_format3"]
+Res.year<-Res.year[variable_name!= "day_format1"]
+Res.year<-Res.year[variable_name!= "day_format2"]
+Res.year<-Res.year[variable_name!= "month_format1"]
+Res.year<-Res.year[variable_name!= "month_format2"]
+Res.year<-Res.year[variable_name!= "year_format1"]
+Res.year<-Res.year[variable_name!= "year_format2"]
+
+} else {
+  print("This check might not be performed in case the PERSONS table is not included in the directory or had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again or ignore if these tables are not provided.")
+}
+} else {
+    print("This check might not be performed in case the PERSONS table is not included in the directory or had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again or ignore if these tables are not provided.")
+}
+```
+
+```{r output_miss_year, echo=FALSE}
+if (length(actual_tables.r)!=0){
+if (length(Res.year) !=0){
+#Output for missing data stratified by meaning
+Res.year[, percentage:=round((count/total)*100, digits=1)]
+  
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.year[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+if (length(actual_tables.r)!=0){
+if (length(Res.year) !=0){
+#Save results as .csv file
+write.csv(Res.year, paste(step1to3_dir,"step1to3_missing_year.csv",sep="") ,row.names = F)
+}
+}
+  
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.year[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.year[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.year[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.year.1<-Res.year[count != "<5"]
+Res.year.1[, count:= as.numeric(count)]
+Res.year.1[, percentage:= as.numeric(percentage)]
+
+if (Res.year[,.N] != 0){
+datatable(Res.year, option=list(scrollX=TRUE))%>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold'))
+) %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+)
+}
+
+} 
+}
+
+if (length(actual_tables.r)!=0){
+if (length(Res.year) !=0){
+#Save results as .csv file
+write.csv(Res.year, paste(step1to3_less,"step1to3_missing_year_masked.csv",sep="") ,row.names = F)
+}
+}
+```
+
+If years in the future or before 1890 are present they will not be plotted in the graphs.  
+
+```{r graph_miss_year, echo=FALSE, warning=FALSE, message=FALSE}
+#Graph for missing data by year(Save the graphs for each table as a separate list element)
+if (length(actual_tables.r)!=0){
+  if (length(Res.year) !=0){
+    if (Res.year.1[,.N] != 0){
+  Res.year.graph<-Res.year.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1890]
+  Res.year.graph[,year:=as.character(year)]
+fig.year<-vector(mode="list", length=length(unique(Res.year.graph[["table_name"]])))
+for(i in 1:length(unique(Res.year.graph[["table_name"]]))){
+  fig.year[[i]]<-ggplotly(ggplot(Res.year.graph[table_name==unique(Res.year.graph[["table_name"]])[i]], aes(x = year, y = percentage, group=variable_name)) +
+                               geom_line(aes(color=variable_name)) +
+                               geom_point(aes(color=variable_name)) +
+                               ggtitle(unique(Res.year.graph[["table_name"]])[i]) +
+                               xlab("Year") +
+                               ylab("Percentage of missing")+
+                               theme(axis.text.x = element_text(angle = 90),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+      }
+    }
+  }
+}
+```
+
+```{r display_graph_miss_year, echo=FALSE}
+#Output for graphs
+if (length(actual_tables.r)!=0){
+  if (length(Res.year) !=0){
+    if (length(Res.year.graph) !=0){
+htmltools::tagList(list(fig.year))
+    }
+  }
+}
+```
+<br>
+
+#### **Missing data stratified by meaning and year**
+
+Missing data analysis will be stratified by the variable meaning and year (if both present). The tables that will not undergo this analysis even if present in the directory are:  
+
+**a.** PERSONS  
+**b.** PERSON_RELATIONSHIPS      
+**c.** EUROCAT  
+**d.** PRODUCTS  
+**e.** CDM_SOURCE  
+**f.** INSTANCE  
+
+In case 2 date variables are present for stratification purposes the one that is complete will be used. If both present the following will be used:  
+
+**a.** MEDICINES: date_dispensing  
+**b.** VACCINES: vx_admin_date   
+<br>
+
+If years before 1995 or years in the future are present, they will be colored red.   
+
+```{r combine_miss_my, echo=FALSE}
+#Run script for missing data by meaning and year
+if (length(actual_tables.r) !=0){
+Res.my<-Results$MISS_MEAN_YEAR
+
+combine_miss_mean_year<-function(ls){
+  Res<-vector(mode="list", length=length(ls))
+  for (i in 1: length(ls)){
+    Res[[i]]<-ls[[i]][,lapply(.SD, sum), by=.(table_name, variable_name, meaning, year), .SDcols=c("count", "total")]
+  }
+  Res<-do.call(rbind,Res)
+  return(Res)
+}
+if (length(Res.my) !=0){
+Res.my<-combine_miss_mean_year(Res.my)
+Res.my<-Res.my[variable_name != "count_format1"]
+Res.my<-Res.my[variable_name != "count_format2"]
+Res.my<-Res.my[variable_name != "date"]
+Res.my<-Res.my[!(is.na(meaning))]
+Res.my<-Res.my[meaning!=""]
+} else {
+   print("This check might not be performed in case all tables that contain a meaning and date variable included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again. Ignore if only tables that do not conatin a meaning and date variables are present in the directory.")
+}
+} else {
+  print("This check might not be performed in case all tables included in the directory had a previous error in fields check, presence of variable or lowercase checks. Fix the problem first and then run the script again. Ignore if only tables that do not conatin a meaning and date variables are present in the directory.")
+}
+
+```
+
+```{r output_miss_my, echo=FALSE}
+if (length(actual_tables.r) !=0){
+  if(length(Res.my) !=0){
+#Output for missing data by meaning and year
+Res.my[, percentage:=round((count/total)*100, digits=1)]
+
+    #If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.my[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+    if (length(actual_tables.r) !=0){
+if(length(Res.my) !=0){
+#Save results as .csv file
+write.csv(Res.my, paste(step1to3_dir,"step1to3_missing_meaning_year.csv",sep="") ,row.names = F)
+}
+    }
+    
+  #Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.my[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.my[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.my[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.my.1<-Res.my[count != "<5"]
+Res.my.1[, count:= as.numeric(count)]
+Res.my.1[, percentage:= as.numeric(percentage)]
+
+    if (Res.my[,.N] != 0){
+datatable(Res.my, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold'))
+) %>% formatStyle(
+  'meaning', 'percentage',
+  color = styleInterval(c(0.001, 100), c('black', '#76b82a', 'black')),
+  fontWeight = styleInterval(c(0.001, 100), c('normal', 'bold', 'normal'))
+) %>% formatStyle(
+  'table_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+) %>% formatStyle(
+  'variable_name', 'percentage',
+  color = styleEqual(c("N/A"), c('#76b82a')),
+  fontWeight = styleEqual(c("N/A"), c('bold'))
+)
+    }
+  }
+}
+
+if (length(actual_tables.r) !=0){
+if(length(Res.my) !=0){
+#Save results as .csv file
+write.csv(Res.my, paste(step1to3_less,"step1to3_missing_meaning_year_masked.csv",sep="") ,row.names = F)
+}
+}
+```
+
+
+If years in the future or before 1995 are present they will not be plotted in the graphs.  
+
+```{r graph_miss_my, echo=FALSE, warning=FALSE, message=FALSE}
+if (length(actual_tables.r) !=0){
+if(length(Res.my) !=0){
+  if(nrow(Res.my) !=0){
+#Graph for missing by meaning and year
+Res.my.graph<-Res.my.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1995]
+Res.my.graph[,year:=as.character(year)]
+fig.my<-vector(mode="list", length=length(unique(Res.my.graph[["table_name"]])))
+for(i in 1:length(unique(Res.my.graph[["table_name"]]))){
+fig.my[[i]]<-ggplotly(ggplot(Res.my.graph[table_name==unique(Res.my.graph[["table_name"]])[i]], aes(variable_name,year)) +
+           facet_wrap(.~Res.my.graph[table_name==unique(Res.my.graph[["table_name"]])[i], meaning], ncol=2)+
+           geom_tile(aes(fill = percentage),colour = "white") +
+           scale_fill_gradient(low = "#d8e1cf", high = "#76b82a") +  
+             ggtitle(unique(Res.my.graph[["table_name"]])[i]) +
+                               xlab("Variable_name") +
+                               ylab("Year")+
+           theme(axis.text.x = element_text(angle = 90),                              
+                 axis.title.x = element_text(colour = "#76b82a"),
+                 axis.title.y = element_text(colour = "#76b82a"),
+                 plot.title = element_text(colour = "#76b82a")))
+}
+}
+}
+}
+```
+
+```{r display_graph_miss_my, echo=FALSE, fig.width = 10}
+#Output for graphs
+if(length(actual_tables.r)!=0){
+ if(length(Res.my) !=0){ 
+   if(nrow(Res.my) !=0){
+if(length(Res.my.graph) !=0){
+htmltools::tagList(list(fig.my))
+}
+ }
+ }
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 4. Output folder structure   
+
+STEP1to3      
+**1.** STEP_1to3.html: Rmarkdown report      
+**2.** `step1to3_missing_overall.csv`: missing data overall     
+**3.** `step1to3_missing_meaning.csv`: missing data stratified by meaning     
+**4.** `step1to3_missing_year.csv`: missing data stratified by year     
+**5.** `step1to3_missing_meaning_year.csv`: missing data stratified by meaning and year     
+**6.** Masked:      
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `step1to3_missing_overall_masked.csv`: missing data overall where counts smaller than 5 are masked            
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `step1to3_missing_meaning_masked.csv`: missing data stratified by meaning where counts smaller than 5 are masked       
+&nbsp;&nbsp;&nbsp;&nbsp;***c.*** `step1to3_missing_year_masked.csv`: missing data stratified by year where counts smaller than 5 are masked            
+&nbsp;&nbsp;&nbsp;&nbsp;***d.*** `step1to3_missing_meaning_year_masked.csv`: missing data stratified by meaning and year where counts smaller than 5 are masked     
+
+</div>
+
+
+
+
+

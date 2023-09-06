@@ -1,0 +1,1951 @@
+---
+title: 'CONCEPTION - Level 1 checks: Step 4 to 5 (PRODUCTS)'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r create_dir.p, include=FALSE}
+if ("PRODUCTS" %in% list.files(output_dir)){
+  products_dir<-paste(output_dir, "PRODUCTS/", sep="")
+  products_less<-paste(products_dir, "Masked/", sep="")
+    dir.create(paste(products_dir,"tmp", sep=""))
+ tmp<-paste(products_dir, "tmp/", sep="")
+} else {
+#Create the PRODUCTS folder in the output dir
+dir.create(paste(output_dir, "PRODUCTS", sep=""))
+  products_dir<-paste(output_dir, "PRODUCTS/", sep="")
+  dir.create(paste(products_dir,"Masked", sep=""))
+products_less<-paste(products_dir, "Masked/", sep="")
+    dir.create(paste(products_dir,"tmp", sep=""))
+ tmp<-paste(products_dir, "tmp/", sep="")
+}
+```
+
+```{css, echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 15px 10px 15px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+``` {r list_of_variables, echo = FALSE}
+total_var<-as.data.table(cbind(table_name="PRODUCTS", 
+        variable_name=c("medicinal_product_id", "medicinal_product_name", "unit_of_presentation_type", "unit_of_presentation_num", "administration_dose_form",
+                        "administration_route", "medicinal_product_atc_code", "subst1_atc_code", "subst2_atc_code",
+                        "subst3_atc_code", "subst1_amount_per_form", "subst2_amount_per_form", "subst3_amount_per_form",
+                        "subst1_amount_unit", "subst2_amount_unit", "subst3_amount_unit",
+                        "subst1_concentration", "subst2_concentration", "subst3_concentration", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content", "concentration_total_content_unit", "medicinal_product_manufacturer")))
+```
+
+```{r check_directory, include=FALSE}
+#Get all files in the CDM directory that are .csv files
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+
+#List of actual tables that match PRODUCTS pattern
+actual_tables<-directory_CDM[grepl(pattern="PRODUCTS", x=directory_CDM)]
+
+```
+
+```{r count_functions, include=FALSE}
+#Counts by medicinal_product_atc_code(other variables)
+step4.1<-function(dt, var_name){
+  dt[, atc_code:= dt[[var_name]]]#Duplicate the medicinal_product_atc_code variable
+  dt[, atc_code:= substr(atc_code, 0, 3)] #truncated to third level
+  
+  #medicinal_product_id
+  a.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("medicinal_product_id"), by=.(atc_code)] 
+  a.1<-data.table::melt(a.1, id.vars=c("atc_code"), measure.vars=colnames(a.1)[-1])
+  setnames(a.1, "value", "count")
+  a.2<-dt[complete.cases(atc_code) & complete.cases(medicinal_product_id), .N]
+  a.2<-data.table(variable="medicinal_product_id", total=a.2)
+  
+  #medicinal_product_name
+  b.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("medicinal_product_name"), by=.(atc_code)] 
+  b.1<-data.table::melt(b.1, id.vars=c("atc_code"), measure.vars=colnames(b.1)[-1])
+  setnames(b.1, "value", "count")
+  b.2<-dt[complete.cases(atc_code) & complete.cases(medicinal_product_name), .N]
+  b.2<-data.table(variable="medicinal_product_name", total=b.2)
+  
+  #unit_of_presentation_num
+  c.1<-dt[complete.cases(atc_code), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("unit_of_presentation_num"), by= .(atc_code)]
+  c.1<-data.table::melt(c.1, id.vars=c("atc_code"), measure.vars=colnames(c.1)[-1])
+  setnames(c.1, "value", "count")
+  c.2<-dt[complete.cases(atc_code) & complete.cases(unit_of_presentation_num), .N]
+  c.2<-data.table(variable="unit_of_presentation_num", total=c.2)
+  
+  #medicinal_product_atc_code
+  d.1<-dt[complete.cases(atc_code), lapply(.SD, FUN=function(x) length(unique(na.omit(x)))), .SDcols=c("medicinal_product_atc_code"), by= .(atc_code)]
+  d.1<-data.table::melt(d.1, id.vars=c("atc_code"), measure.vars=colnames(d.1)[-1])
+  setnames(d.1, "value", "count")
+  d.2<-dt[complete.cases(atc_code) & complete.cases(medicinal_product_atc_code), .N]
+  d.2<-data.table(variable="medicinal_product_atc_code", total=d.2)
+  
+  #subst1_atc_code
+  e.1<-dt[complete.cases(atc_code), lapply(.SD, FUN=function(x) length(unique(na.omit(x)))), .SDcols=c("subst1_atc_code"), by= .(atc_code)]
+  e.1<-data.table::melt(e.1, id.vars=c("atc_code"), measure.vars=colnames(e.1)[-1])
+  setnames(e.1, "value", "count")
+  e.2<-dt[complete.cases(atc_code) & complete.cases(subst1_atc_code), .N]
+  e.2<-data.table(variable="subst1_atc_code", total=e.2)
+  
+  #subst2_atc_code
+  f.1<-dt[complete.cases(atc_code), lapply(.SD, FUN=function(x) length(unique(na.omit(x)))), .SDcols=c("subst2_atc_code"), by= .(atc_code)]
+  f.1<-data.table::melt(f.1, id.vars=c("atc_code"), measure.vars=colnames(f.1)[-1])
+  setnames(f.1, "value", "count")
+  f.2<-dt[complete.cases(atc_code) & complete.cases(subst2_atc_code), .N]
+  f.2<-data.table(variable="subst2_atc_code", total=f.2)
+  
+  #subst3_atc_code
+  g.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) length(unique(na.omit(x)))), .SDcols=c("subst3_atc_code"), by=.(atc_code)] 
+  g.1<-data.table::melt(g.1, id.vars=c("atc_code"), measure.vars=colnames(g.1)[-1]) #from wide to long  
+  setnames(g.1, "value", "count")
+  g.2<-dt[complete.cases(atc_code) & complete.cases(subst3_atc_code), .N]
+  g.2<-data.table(variable="subst3_atc_code", total=g.2)
+  
+    #subst1_amount_per_form
+  h.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst1_amount_per_form"), by=.(atc_code)] 
+  h.1<-data.table::melt(h.1, id.vars=c("atc_code"), measure.vars=colnames(h.1)[-1]) #from wide to long  
+  setnames(h.1, "value", "count")
+  h.2<-dt[complete.cases(atc_code) & complete.cases(subst1_amount_per_form), .N]
+  h.2<-data.table(variable="subst1_amount_per_form", total=h.2)
+  
+    #subst2_amount_per_form
+  i.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst2_amount_per_form"), by=.(atc_code)] 
+  i.1<-data.table::melt(i.1, id.vars=c("atc_code"), measure.vars=colnames(i.1)[-1]) #from wide to long  
+  setnames(i.1, "value", "count")
+  i.2<-dt[complete.cases(atc_code) & complete.cases(subst2_amount_per_form), .N]
+  i.2<-data.table(variable="subst2_amount_per_form", total=i.2)
+  
+      #subst3_amount_per_form
+  j.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst3_amount_per_form"), by=.(atc_code)] 
+  j.1<-data.table::melt(j.1, id.vars=c("atc_code"), measure.vars=colnames(j.1)[-1]) #from wide to long  
+  setnames(j.1, "value", "count")
+  j.2<-dt[complete.cases(atc_code) & complete.cases(subst3_amount_per_form), .N]
+  j.2<-data.table(variable="subst3_amount_per_form", total=j.2)
+  
+  #subst1_concentration
+  k.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst1_concentration"), by=.(atc_code)] 
+  k.1<-data.table::melt(k.1, id.vars=c("atc_code"), measure.vars=colnames(k.1)[-1]) #from wide to long  
+  setnames(k.1, "value", "count")
+  k.2<-dt[complete.cases(atc_code) & complete.cases(subst1_concentration), .N]
+  k.2<-data.table(variable="subst1_concentration", total=k.2)
+  
+    #subst2_concentration
+  l.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst2_concentration"), by=.(atc_code)] 
+  l.1<-data.table::melt(l.1, id.vars=c("atc_code"), measure.vars=colnames(l.1)[-1]) #from wide to long  
+  setnames(l.1, "value", "count")
+  l.2<-dt[complete.cases(atc_code) & complete.cases(subst2_concentration), .N]
+  l.2<-data.table(variable="subst2_concentration", total=l.2)
+  
+    #subst3_concentration
+  m.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("subst3_concentration"), by=.(atc_code)] 
+  m.1<-data.table::melt(m.1, id.vars=c("atc_code"), measure.vars=colnames(m.1)[-1]) #from wide to long  
+  setnames(m.1, "value", "count")
+  m.2<-dt[complete.cases(atc_code) & complete.cases(subst3_concentration), .N]
+  m.2<-data.table(variable="subst3_concentration", total=m.2)
+  
+      #concentration_total_content
+  n.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("concentration_total_content"), by=.(atc_code)] 
+  n.1<-data.table::melt(n.1, id.vars=c("atc_code"), measure.vars=colnames(n.1)[-1]) #from wide to long  
+  setnames(n.1, "value", "count")
+  n.2<-dt[complete.cases(atc_code) & complete.cases(concentration_total_content), .N]
+  n.2<-data.table(variable="concentration_total_content", total=n.2)
+  
+        #medicinal_product_manufacturer
+  o.1<-dt[complete.cases(atc_code),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("medicinal_product_manufacturer"), by=.(atc_code)] 
+  o.1<-data.table::melt(o.1, id.vars=c("atc_code"), measure.vars=colnames(o.1)[-1]) #from wide to long  
+  setnames(o.1, "value", "count")
+  o.2<-dt[complete.cases(atc_code) & complete.cases(medicinal_product_manufacturer), .N]
+  o.2<-data.table(variable="medicinal_product_manufacturer", total=o.2)
+  
+  count<-rbind(a.1,b.1,c.1,d.1,e.1, f.1, g.1, h.1, i.1, j.1, k.1, l.1, m.1, n.1, o.1)
+  total<-rbind(a.2,b.2,c.2,d.2,e.2, f.2, g.2, h.2, i.2, j.2, k.2, l.2, m.2, n.2, o.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+
+#Counts by product_ATCcode (2 or more categories)
+step4.2<-function(dt, var_name){
+   dt[, atc_code:= dt[[var_name]]]#Duplicate the medicinal_product_atc_code variable
+  dt[, atc_code:= substr(atc_code, 0, 3)] #truncated to third level
+  
+  #unit_of_presentation_type
+  a.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, unit_of_presentation_type)]
+  setnames(a.1, "unit_of_presentation_type", "vocabulary")
+  a.1<-cbind(a.1, variable="unit_of_presentation_type")
+  a.2<-dt[complete.cases(atc_code) & complete.cases(unit_of_presentation_type), .N]
+  a.2<-data.table(variable="unit_of_presentation_type", total=a.2)
+  
+  #administration_dose_form
+  b.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, administration_dose_form)]
+  setnames(b.1, "administration_dose_form", "vocabulary")
+  b.1<-cbind(b.1, variable="administration_dose_form")
+  b.2<-dt[complete.cases(atc_code) & complete.cases(administration_dose_form), .N]
+  b.2<-data.table(variable="administration_dose_form", total=b.2)
+  
+    #administration_route
+  c.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, administration_route)]
+  setnames(c.1, "administration_route", "vocabulary")
+  c.1<-cbind(c.1, variable="administration_route")
+  c.2<-dt[complete.cases(atc_code) & complete.cases(administration_route), .N]
+  c.2<-data.table(variable="administration_route", total=c.2)
+  
+      #subst1_amount_unit
+  d.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst1_amount_unit)]
+  setnames(d.1, "subst1_amount_unit", "vocabulary")
+  d.1<-cbind(d.1, variable="subst1_amount_unit")
+  d.2<-dt[complete.cases(atc_code) & complete.cases(subst1_amount_unit), .N]
+  d.2<-data.table(variable="subst1_amount_unit", total=d.2)
+  
+        #subst2_amount_unit
+  e.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst2_amount_unit)]
+  setnames(e.1, "subst2_amount_unit", "vocabulary")
+  e.1<-cbind(e.1, variable="subst2_amount_unit")
+  e.2<-dt[complete.cases(atc_code) & complete.cases(subst2_amount_unit), .N]
+  e.2<-data.table(variable="subst2_amount_unit", total=e.2)
+  
+    #subst3_amount_unit
+  f.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst3_amount_unit)]
+  setnames(f.1, "subst3_amount_unit", "vocabulary")
+  f.1<-cbind(f.1, variable="subst3_amount_unit")
+  f.2<-dt[complete.cases(atc_code) & complete.cases(subst3_amount_unit), .N]
+  f.2<-data.table(variable="subst3_amount_unit", total=f.2)
+  
+ #subst1_concentration_unit
+  g.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst1_concentration_unit)]
+  setnames(g.1, "subst1_concentration_unit", "vocabulary")
+  g.1<-cbind(g.1, variable="subst1_concentration_unit")
+  g.2<-dt[complete.cases(atc_code) & complete.cases(subst1_concentration_unit), .N]
+  g.2<-data.table(variable="subst1_concentration_unit", total=g.2)
+  
+ #subst2_concentration_unit
+  h.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst2_concentration_unit)]
+  setnames(h.1, "subst2_concentration_unit", "vocabulary")
+  h.1<-cbind(h.1, variable="subst2_concentration_unit")
+  h.2<-dt[complete.cases(atc_code) & complete.cases(subst2_concentration_unit), .N]
+  h.2<-data.table(variable="subst2_concentration_unit", total=h.2)
+  
+ #subst3_concentration_unit
+  i.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, subst3_concentration_unit)]
+  setnames(i.1, "subst3_concentration_unit", "vocabulary")
+  i.1<-cbind(i.1, variable="subst3_concentration_unit")
+  i.2<-dt[complete.cases(atc_code) & complete.cases(subst3_concentration_unit), .N]
+  i.2<-data.table(variable="subst3_concentration_unit", total=i.2)
+  
+  #concentration_total_content_unit
+  j.1<-dt[complete.cases(atc_code), .(count=.N), by=.(atc_code, concentration_total_content_unit)]
+  setnames(j.1, "concentration_total_content_unit", "vocabulary")
+  j.1<-cbind(j.1, variable="concentration_total_content_unit")
+  j.2<-dt[complete.cases(atc_code) & complete.cases(concentration_total_content_unit), .N]
+  j.2<-data.table(variable="concentration_total_content_unit", total=j.2)
+  
+  count<-rbind(a.1,b.1,c.1,d.1,e.1,f.1,g.1,h.1,i.1,j.1)
+  total<-rbind(a.2,b.2,c.2,d.2,e.2,f.2,g.2,h.2,i.2,j.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+```
+
+```{r distribution_functions, include=FALSE}
+#Distribution by atc variable and unit variable
+distribution_atc<-function(dt, var, atc_var, unit_var){
+
+  dt[, atc_code:= substr(dt[[atc_var]], 0, 3)] #truncated to third level
+  dt[, unit:= dt[[unit_var]]]#Duplicate the unit variable
+  
+  mean.atc<-dt[, lapply(.SD, mean), .SDcols=c(var), by=.(atc_code, unit)]
+  setnames(mean.atc, var, "mean")
+  sd.atc<-dt[, lapply(.SD, sd), .SDcols=c(var), by=.(atc_code, unit)]
+  setnames(sd.atc, var, "SD")
+  median.atc<-dt[, lapply(.SD, median), .SDcols=c(var), by=.(atc_code, unit)]
+  setnames(median.atc, var, "median")
+  iqr.atc<-dt[, lapply(.SD, IQR), .SDcols=c(var), by=.(atc_code, unit)]
+  setnames(iqr.atc, var, "IQR")
+  skewness.atc<-dt[, lapply(.SD, skewness), .SDcols=c(var), by=.(atc_code, unit)]  
+  setnames(skewness.atc, var, "skewness")
+  kurtosis.atc<-dt[, lapply(.SD, kurtosis), .SDcols=c(var), by=.(atc_code, unit)]  
+  setnames(kurtosis.atc, var, "kurtosis")
+  
+  dist.atc<-cbind(mean.atc, sd.atc[,3], median.atc[,3], iqr.atc[,3], skewness.atc[,3],kurtosis.atc[,3])
+  
+  return(dist.atc)
+}
+```
+
+```{r combine_results_functions, include=FALSE}
+#Combine results when counts by atc_code (other variables)
+combine_counts1.atc<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, atc_code, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "atc_code")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "atc_code", "count"))
+  
+  b<-totals_dt[, lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+}
+
+#Combine results when counts by atc_code(2 or more categories)
+combine_counts2.atc<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, atc_code, vocabulary, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:3) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "atc_code")
+  setnames(a.2, "combination3", "vocabulary")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "atc_code", "vocabulary", "count"))
+  
+  b<-totals_dt[,lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+  
+}
+```
+
+```{r step4_5_check, include=FALSE}
+step_4_5_check<- function(tables_list){
+  Res.4.1<-list()
+  Res.4.2<-list()
+  w<-1
+  
+  for (i in 1:length(tables_list)){
+    df<- fread(paste(path_dir, tables_list[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+    df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+    
+       #Create a combination variable by combining all columns, keep only that variable
+    cols<-colnames(df)
+    dup<-df[, combination := Reduce(function(...) paste(..., sep = "_^_"), .SD[, mget(cols)])][,"combination"]
+    
+    write.csv(dup, paste(tmp,"dup_", tables_list[i],sep="") ,row.names = F)
+    rm(dup)
+    
+       #Create the dataset with the variables needed for distribution of continuous variables
+    dist.pres.num<-df[!is.na(unit_of_presentation_type) & !is.na(unit_of_presentation_num) & !is.na(medicinal_product_atc_code),c("unit_of_presentation_type", "unit_of_presentation_num", "medicinal_product_atc_code")]
+    if(dist.pres.num[,.N]>0){
+    write.csv(dist.pres.num, paste(tmp,"dist.pres.num_", tables_list[i],sep="") ,row.names = F)
+    rm(dist.pres.num)
+  }
+    
+    dist.subst1.amount<-df[!is.na(subst1_amount_unit) & !is.na(subst1_amount_per_form) & !is.na(subst1_atc_code),c("subst1_amount_unit", "subst1_amount_per_form", "subst1_atc_code")]
+        if(dist.subst1.amount[,.N]>0){
+    write.csv(dist.subst1.amount, paste(tmp,"dist.subst1.amount_", tables_list[i],sep="") ,row.names = F)
+    rm(dist.subst1.amount)
+  }
+    
+    dist.subst2.amount<-df[!is.na(subst2_amount_unit) & !is.na(subst2_amount_per_form) & !is.na(subst2_atc_code),c("subst2_amount_unit", "subst2_amount_per_form", "subst2_atc_code")]
+if(dist.subst2.amount[,.N]>0){
+write.csv(dist.subst2.amount, paste(tmp,"dist.subst2.amount_", tables_list[i],sep="") ,row.names = F)
+rm(dist.subst2.amount)
+  }
+
+dist.subst3.amount<-df[!is.na(subst3_amount_unit) & !is.na(subst3_amount_per_form) & !is.na(subst3_atc_code),c("subst3_amount_unit", "subst3_amount_per_form", "subst3_atc_code")]
+if(dist.subst3.amount[,.N]>0){
+write.csv(dist.subst3.amount, paste(tmp,"dist.subst3.amount_", tables_list[i],sep="") ,row.names = F)
+rm(dist.subst3.amount)
+}
+    
+dist.conc1<-df[!is.na(subst1_concentration_unit) & !is.na(subst1_concentration) & !is.na(subst1_atc_code),c("subst1_concentration_unit", "subst1_concentration", "subst1_atc_code")]
+if(dist.conc1[,.N]>0){
+    write.csv(dist.conc1, paste(tmp,"dist.conc1_", tables_list[i],sep="") ,row.names = F)
+    rm(dist.conc1)
+}
+    
+  dist.conc2<-df[!is.na(subst2_concentration_unit) & !is.na(subst2_concentration) & !is.na(subst2_atc_code),c("subst2_concentration_unit", "subst2_concentration", "subst2_atc_code")]
+if(dist.conc2[,.N]>0){
+    write.csv(dist.conc2, paste(tmp,"dist.conc2_", tables_list[i],sep="") ,row.names = F)
+    rm(dist.conc2)
+}
+    
+dist.conc3<-df[!is.na(subst3_concentration_unit) & !is.na(subst3_concentration) & !is.na(subst3_atc_code),c("subst3_concentration_unit", "subst3_concentration", "subst3_atc_code")]
+if(dist.conc3[,.N]>0){
+    write.csv(dist.conc3, paste(tmp,"dist.conc3_", tables_list[i],sep="") ,row.names = F)
+    rm(dist.conc3)
+}
+    
+    dist.conc.total<-df[!is.na(concentration_total_content_unit) & !is.na(concentration_total_content) & !is.na(medicinal_product_atc_code),c("concentration_total_content_unit", "concentration_total_content", "medicinal_product_atc_code")]
+if(dist.conc.total[,.N]>0){
+write.csv(dist.conc.total, paste(tmp,"dist.conc.total_", tables_list[i],sep="") ,row.names = F)
+rm(dist.conc.total)
+}
+    
+    Res.4.1[[w]]<-step4.1(dt=df, var_name = "medicinal_product_atc_code")
+    Res.4.2[[w]]<-step4.2(dt=df, var_name = "medicinal_product_atc_code")
+    rm(df)
+  }
+  
+   #save results for duplicates
+  dup_files<-list.files(tmp, pattern="^dup")
+  if (length(dup_files)>1){
+  dup<-fread(paste0(tmp,dup_files[1]), sep=";")
+  i<-2
+  for (i in 2:length(dup_files)){
+    dup<-rbind(dup,fread(paste0(tmp,dup_files[i]), sep=";"))
+    dup<-dup[duplicated(combination)]
+  }
+  dup<-dup[,.N]
+  } else {
+    dup<-fread(paste0(tmp,dup_files), sep=";")
+    dup<-dup[duplicated(combination)]
+    dup<-dup[,.N]
+  }
+  rm(dup_files)
+  
+ #Save results for distributions
+#######
+  # dist.pres.num
+#######
+ dist.pres.num_files<-list.files(tmp, pattern="^dist.pres.num")
+   if (length(dist.pres.num_files)>1){
+     dist.pres.num<-fread(paste0(tmp,dist.pres.num_files[1]))
+  i<-2
+  for (i in 2:length(dist.pres.num_files)){
+    dist.pres.num<-rbind(dist.pres.num,fread(paste0(tmp,dist.pres.num_files[i])))
+  }
+  tot_dist.pres.num<-dist.pres.num[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.pres.num_files)==1){
+     dist.pres.num<-fread(paste0(tmp,dist.pres.num_files))
+    tot_dist.pres.num<-dist.pres.num[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.pres.num_files)==0){
+  dist.pres.num<-NULL
+   tot_dist.pres.num<-NULL
+  }
+  rm(dist.pres.num_files)
+  
+  if (!is.null(dist.pres.num)){
+  #unit_of_presentation_num by unit_of_presentation_type and medicinal_product_atc_code
+suppressWarnings(dist.pres.num<-dist.pres.num[,unit_of_presentation_num:= as.numeric(unit_of_presentation_num)])  #Transform the unit_of_presentation_num into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.pres.num[is.na(unit_of_presentation_num),.N]>0){
+dist.pres.num.atc<-paste0("The variable unit_of_presentation_num contains", dist.pres.num[is.na(unit_of_presentation_num),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of disp_number_medicinal_product
+dist.pres.num[,atc_short:=substr(dist.pres.num[["medicinal_product_atc_code"]], 0, 3)]
+tot_dist.pres.num<-dist.pres.num[,.(total_records=.N), by=atc_short]
+names(tot_dist.pres.num)<-c("atc_code", "total_records")
+dist.pres.num.atc<-merge(data.table(table_name="PRODUCTS", variable_name="unit_of_presentation_num",distribution_atc(dist.pres.num, var = "unit_of_presentation_num", atc_var = "medicinal_product_atc_code", unit_var = "unit_of_presentation_type" )), tot_dist.pres.num, by="atc_code")
+setcolorder(dist.pres.num.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.pres.num.atc<-NULL}    
+rm(dist.pres.num, tot_dist.pres.num) 
+    
+
+#######
+  #dist.subst1.amount
+#######
+  dist.subst1.amount_files<-list.files(tmp, pattern="^dist.subst1.amount")
+   if (length(dist.subst1.amount_files)>1){
+     dist.subst1.amount<-fread(paste0(tmp,dist.subst1.amount_files[1]))
+  i<-2
+  for (i in 2:length(dist.subst1.amount_files)){
+    dist.subst1.amount<-rbind(dist.subst1.amount,fread(paste0(tmp,dist.subst1.amount_files[i])))
+  }
+  tot_dist.subst1.amount<-dist.subst1.amount[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.subst1.amount_files)==1){
+     dist.subst1.amount<-fread(paste0(tmp,dist.subst1.amount_files))
+    tot_dist.subst1.amount<-dist.subst1.amount[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.subst1.amount_files)==0){
+  dist.subst1.amount<-NULL
+   tot_dist.subst1.amount<-NULL
+  }
+  rm(dist.subst1.amount_files)
+  
+   if (!is.null(dist.subst1.amount)){
+  #subst1_amount_per_form by subst1_amount_unit and subst1_atc_code
+suppressWarnings(dist.subst1.amount<-dist.subst1.amount[,subst1_amount_per_form:= as.numeric(subst1_amount_per_form)])  #Transform the subst1_amount_per_form into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.subst1.amount[is.na(subst1_amount_per_form),.N]>0){
+dist.subst1.amount.atc<-paste0("The variable subst1_amount_per_form contains", dist.subst1.amount[is.na(subst1_amount_per_form),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst1_amount_per_form
+dist.subst1.amount[,atc_short:=substr(dist.subst1.amount[["subst1_atc_code"]], 0, 3)]
+tot_dist.subst1.amount<-dist.subst1.amount[,.(total_records=.N), by=atc_short]
+names(tot_dist.subst1.amount)<-c("atc_code", "total_records")
+dist.subst1.amount.atc<-merge(data.table(table_name="PRODUCTS", variable_name="subst1_amount_per_form",distribution_atc(dist.subst1.amount, var = "subst1_amount_per_form", atc_var = "subst1_atc_code", unit_var = "subst1_amount_unit" )), tot_dist.subst1.amount, by="atc_code")
+setcolorder(dist.subst1.amount.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.subst1.amount.atc<-NULL}    
+rm(dist.subst1.amount, tot_dist.subst1.amount)  
+  
+####### 
+#dist.subst2.amount
+#######
+  dist.subst2.amount_files<-list.files(tmp, pattern="^dist.subst2.amount")
+   if (length(dist.subst2.amount_files)>1){
+     dist.subst2.amount<-fread(paste0(tmp,dist.subst2.amount_files[1]))
+  i<-2
+  for (i in 2:length(dist.subst2.amount_files)){
+    dist.subst2.amount<-rbind(dist.subst2.amount,fread(paste0(tmp,dist.subst2.amount_files[i])))
+  }
+  tot_dist.subst2.amount<-dist.subst2.amount[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.subst2.amount_files)==1){
+     dist.subst2.amount<-fread(paste0(tmp,dist.subst2.amount_files))
+    tot_dist.subst2.amount<-dist.subst2.amount[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.subst2.amount_files)==0){
+  dist.subst2.amount<-NULL
+   tot_dist.subst2.amount<-NULL
+  }
+  rm(dist.subst2.amount_files)
+  
+     if (!is.null(dist.subst2.amount)){
+  #subst2_amount_per_form by subst2_amount_unit and subst2_atc_code
+suppressWarnings(dist.subst2.amount<-dist.subst2.amount[,subst2_amount_per_form:= as.numeric(subst2_amount_per_form)])  #Transform the subst1_amount_per_form into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.subst2.amount[is.na(subst2_amount_per_form),.N]>0){
+dist.subst2.amount.atc<-paste0("The variable subst2_amount_per_form contains", dist.subst2.amount[is.na(subst2_amount_per_form),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst2_amount_per_form
+  dist.subst2.amount[,atc_short:=substr(dist.subst2.amount[["subst2_atc_code"]], 0, 3)]
+tot_dist.subst2.amount<-dist.subst2.amount[,.(total_records=.N), by=atc_short]
+names(tot_dist.subst2.amount)<-c("atc_code", "total_records")
+dist.subst2.amount.atc<-merge(data.tablecbind(table_name="PRODUCTS", variable_name="subst2_amount_per_form",distribution_atc(dist.subst2.amount, var = "subst2_amount_per_form", atc_var = "subst2_atc_code", unit_var = "subst2_amount_unit" )), tot_dist.subst2.amount, by="atc_code")
+setcolorder(dist.subst2.amount.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.subst2.amount.atc<-NULL}    
+rm(dist.subst2.amount, tot_dist.subst2.amount)  
+####### 
+#dist.subst3.amount
+#######
+  dist.subst3.amount_files<-list.files(tmp, pattern="^dist.subst3.amount")
+   if (length(dist.subst3.amount_files)>1){
+     dist.subst3.amount<-fread(paste0(tmp,dist.subst3.amount_files[1]))
+  i<-2
+  for (i in 2:length(dist.subst3.amount_files)){
+    dist.subst3.amount<-rbind(dist.subst3.amount,fread(paste0(tmp,dist.subst3.amount_files[i])))
+  }
+  tot_dist.subst3.amount<-dist.subst3.amount[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.subst3.amount_files)==1){
+     dist.subst3.amount<-fread(paste0(tmp,dist.subst3.amount_files))
+    tot_dist.subst3.amount<-dist.subst3.amount[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.subst3.amount_files)==0){
+  dist.subst3.amount<-NULL
+   tot_dist.subst3.amount<-NULL
+  }
+  rm(dist.subst3.amount_files)
+
+       if (!is.null(dist.subst3.amount)){
+  #subst3_amount_per_form by subst3_amount_unit and subst3_atc_code
+suppressWarnings(dist.subst3.amount<-dist.subst3.amount[,subst3_amount_per_form:= as.numeric(subst3_amount_per_form)])  #Transform the subst3_amount_per_form into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.subst3.amount[is.na(subst3_amount_per_form),.N]>0){
+dist.subst3.amount.atc<-paste0("The variable subst3_amount_per_form contains", dist.subst3.amount[is.na(subst3_amount_per_form),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst3_amount_per_form
+  dist.subst3.amount[,atc_short:=substr(dist.subst3.amount[["subst3_atc_code"]], 0, 3)]
+tot_dist.subst3.amount<-dist.subst3.amount[,.(total_records=.N), by=atc_short]
+names(tot_dist.subst3.amount)<-c("atc_code", "total_records")
+dist.subst3.amount.atc<-merge(data.table(table_name="PRODUCTS", variable_name="subst3_amount_per_form",distribution_atc(dist.subst3.amount, var = "subst3_amount_per_form", atc_var = "subst3_atc_code", unit_var = "subst3_amount_unit" )), tot_dist.subst3.amount, by="atc_code")
+setcolorder(dist.subst3.amount.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.subst3.amount.atc<-NULL}    
+rm(dist.subst3.amount, tot_dist.subst3.amount)  
+
+####### 
+#dist.conc1
+#######
+  dist.conc1_files<-list.files(tmp, pattern="^dist.conc1")
+   if (length(dist.conc1_files)>1){
+     dist.conc1<-fread(paste0(tmp,dist.conc1_files[1]))
+  i<-2
+  for (i in 2:length(dist.conc1_files)){
+    dist.conc1<-rbind(dist.conc1,fread(paste0(tmp,dist.conc1_files[i])))
+  }
+   tot_dist.conc1<-dist.conc1[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.conc1_files)==1){
+     dist.conc1<-fread(paste0(tmp,dist.conc1_files))
+     tot_dist.conc1<-dist.conc1[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.conc1_files)==0){
+  dist.conc1<-NULL
+   tot_dist.conc1<-NULL
+  }
+  rm(dist.conc1_files)
+  
+        if (!is.null(dist.conc1)){
+   #subst1_concentration by subst1_concentration_unit and subst1_atc_code
+suppressWarnings(dist.conc1<-dist.conc1[,subst1_concentration:= as.numeric(subst1_concentration)])  #Transform the subst1_concentration into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.conc1[is.na(subst1_concentration),.N]>0){
+dist.conc1.atc<-paste0("The variable subst1_concentration contains", dist.conc1[is.na(subst1_concentration),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst1_concentration
+  dist.conc1[,atc_short:=substr(dist.conc1[["subst1_atc_code"]], 0, 3)]
+tot_dist.conc1<-dist.conc1[,.(total_records=.N), by=atc_short]
+names(tot_dist.conc1)<-c("atc_code", "total_records")
+dist.conc1.atc<-merge(data.table(table_name="PRODUCTS", variable_name="subst1_concentration",distribution_atc(dist.conc1, var = "subst1_concentration", atc_var = "subst1_atc_code", unit_var = "subst1_concentration_unit" )), tot_dist.conc1, by="atc_code")
+setcolorder(dist.conc1.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.conc1.atc<-NULL}    
+rm(dist.conc1, tot_dist.conc1)  
+
+####### 
+#dist.conc2
+#######
+  dist.conc2_files<-list.files(tmp, pattern="^dist.conc2")
+   if (length(dist.conc2_files)>1){
+     dist.conc2<-fread(paste0(tmp,dist.conc2_files[1]))
+  i<-2
+  for (i in 2:length(dist.conc2_files)){
+    dist.conc2<-rbind(dist.conc2,fread(paste0(tmp,dist.conc2_files[i])))
+  }
+   tot_dist.conc2<-dist.conc2[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.conc2_files)==1){
+     dist.conc2<-fread(paste0(tmp,dist.conc2_files))
+     tot_dist.conc2<-dist.conc2[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.conc2_files)==0){
+  dist.conc2<-NULL
+   tot_dist.conc2<-NULL
+  }
+  rm(dist.conc2_files)
+  
+          if (!is.null(dist.conc2)){
+   #subst2_concentration by subst2_concentration_unit and subst2_atc_code
+suppressWarnings(dist.conc2<-dist.conc2[,subst2_concentration:= as.numeric(subst2_concentration)])  #Transform the subst2_concentration into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.conc2[is.na(subst2_concentration),.N]>0){
+dist.conc2.atc<-paste0("The variable subst2_concentration contains", dist.conc2[is.na(subst2_concentration),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst2_concentration
+   dist.conc2[,atc_short:=substr(dist.conc2[["subst2_atc_code"]], 0, 3)]
+tot_dist.conc2<-dist.conc2[,.(total_records=.N), by=atc_short]
+names(tot_dist.conc2)<-c("atc_code", "total_records")
+dist.conc2.atc<-merge(daat.table(table_name="PRODUCTS", variable_name="subst2_concentration",distribution_atc(dist.conc2, var = "subst2_concentration", atc_var = "subst2_atc_code", unit_var = "subst2_concentration_unit" )), tot_dist.conc1, by="atc_code")
+setcolorder(dist.conc2.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.conc2.atc<-NULL}    
+rm(dist.conc2, tot_dist.conc2)  
+  
+  ####### 
+#dist.conc3
+#######
+  dist.conc3_files<-list.files(tmp, pattern="^dist.conc3")
+   if (length(dist.conc3_files)>1){
+     dist.conc3<-fread(paste0(tmp,dist.conc3_files[1]))
+  i<-2
+  for (i in 2:length(dist.conc3_files)){
+    dist.conc3<-rbind(dist.conc3,fread(paste0(tmp,dist.conc3_files[i])))
+  }
+   tot_dist.conc3<-dist.conc3[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.conc3_files)==1){
+     dist.conc3<-fread(paste0(tmp,dist.conc3_files))
+     tot_dist.conc3<-dist.conc3[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.conc3_files)==0){
+  dist.conc3<-NULL
+   tot_dist.conc3<-NULL
+  }
+  rm(dist.conc3_files)
+
+            if (!is.null(dist.conc3)){
+   #subst3_concentration by subst3_concentration_unit and subst3_atc_code
+suppressWarnings(dist.conc3<-dist.conc3[,subst3_concentration:= as.numeric(subst3_concentration)])  #Transform the subst3_concentration into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.conc3[is.na(subst3_concentration),.N]>0){
+dist.conc3.atc<-paste0("The variable subst3_concentration contains", dist.conc3[is.na(subst3_concentration),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of subst3_concentration
+  dist.conc3[,atc_short:=substr(dist.conc3[["subst3_atc_code"]], 0, 3)]
+tot_dist.conc3<-dist.conc3[,.(total_records=.N), by=atc_short]
+names(tot_dist.conc3)<-c("atc_code", "total_records")
+dist.conc3.atc<-merge(daat.table(table_name="PRODUCTS", variable_name="subst3_concentration",distribution_atc(dist.conc3, var = "subst3_concentration", atc_var = "subst3_atc_code", unit_var = "subst3_concentration_unit" )), tot_dist.conc3, by="atc_code")
+setcolorder(dist.conc3.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.conc3.atc<-NULL}    
+rm(dist.conc3, tot_dist.conc3)
+  ####### 
+#dist.conc.total
+#######
+  dist.conc.total_files<-list.files(tmp, pattern="^dist.conc.total")
+   if (length(dist.conc.total_files)>1){
+     dist.conc.total<-fread(paste0(tmp,dist.conc.total_files[1]))
+  i<-2
+  for (i in 2:length(dist.conc.total_files)){
+    dist.conc.total<-rbind(dist.conc.total,fread(paste0(tmp,dist.conc.total_files[i])))
+  }
+   tot_dist.conc.total<-dist.conc.total[,.N] #total number of obs with recorded atc
+   }
+  
+  if (length(dist.conc.total_files)==1){
+     dist.conc.total<-fread(paste0(tmp,dist.conc.total_files))
+     tot_dist.conc.total<-dist.conc.total[,.N] #total number of obs with recorded atc
+  }
+if (length(dist.conc.total_files)==0){
+  dist.conc.total<-NULL
+   tot_dist.conc.total<-NULL
+  }
+  rm(dist.conc.total_files)
+
+              if (!is.null(dist.conc.total)){
+   #concentration_total_content by concentration_total_content_unit and medicinal_product_atc_code
+suppressWarnings(dist.conc.total<-dist.conc.total[,concentration_total_content:= as.numeric(concentration_total_content)])  #Transform the concentration_total_content into numeric from character
+#Check if transformation went well, if not the distribution can not be shown
+if(dist.conc.total[is.na(concentration_total_content),.N]>0){
+dist.conc.total.atc<-paste0("The variable concentration_total_content contains", dist.conc.total[is.na(concentration_total_content),.N], "non-numeric value(s) and as a result the distribution of this variable cannot be estimated.")
+} else {
+  #Save results for distributions
+     #Dist of concentration_total_content
+dist.conc.total[,atc_short:=substr(dist.conc.total[["medicinal_product_atc_code"]], 0, 3)]
+tot_dist.conc.total<-dist.conc.total[,.(total_records=.N), by=atc_short]
+names(tot_dist.conc.total)<-c("atc_code", "total_records")
+dist.conc.total.atc<-merge(data.table(table_name="PRODUCTS", variable_name="concentration_total_content",distribution_atc(dist.conc.total, var = "concentration_total_content", atc_var = "medicinal_product_atc_code", unit_var = "concentration_total_content_unit" )), tot_dist.conc.total, by="atc_code")
+setcolorder(dist.conc.total.atc,c("table_name", "variable_name","atc_code"))
+}
+       } else {dist.conc.total.atc<-NULL}    
+rm(dist.conc.total, tot_dist.conc.total)
+
+  i<-1
+  #Combine results for counts(other variables)
+  Res.4.1.c<-vector(mode="list", length=length(Res.4.1))
+  Res.4.1.t<-vector(mode="list", length=length(Res.4.1))
+  for (i in 1:length(Res.4.1)){
+    Res.4.1.c[[i]]<-do.call(rbind, Res.4.1[[i]][1])
+    Res.4.1.t[[i]]<-do.call(rbind, Res.4.1[[i]][2])
+  }
+  Res.4.1.c<-do.call(rbind, Res.4.1.c)
+  Res.4.1.t<-do.call(rbind, Res.4.1.t)
+  Res.4.1<-combine_counts1.atc(Res.4.1.c, Res.4.1.t)
+  i<-1
+  #Combine results for counts (2 or more categories)
+  Res.4.2.c<-vector(mode="list", length=length(Res.4.2))
+  Res.4.2.t<-vector(mode="list", length=length(Res.4.2))
+  for (i in 1:length(Res.4.2)){
+    Res.4.2.c[[i]]<-do.call(rbind, Res.4.2[[i]][1])
+    Res.4.2.t[[i]]<-do.call(rbind, Res.4.2[[i]][2])
+  }
+  Res.4.2.c<-do.call(rbind, Res.4.2.c)
+  Res.4.2.t<-do.call(rbind, Res.4.2.t)
+  Res.4.2<-combine_counts2.atc(Res.4.2.c, Res.4.2.t)
+  
+ 
+  Res.4.1<-Res.4.1[atc_code !="NA"]
+  Res.4.2<-Res.4.2[atc_code !="NA"]
+  output<-list("COUNT1_M"=Res.4.1, "COUNT2_M"=Res.4.2[vocabulary != "NA"], "DISTRIBUTION.PRES.NUM"=dist.pres.num.atc, "DISTRIBUTION.S1_AMOUNT"=dist.subst1.amount.atc, "DISTRIBUTION.S2_AMOUNT"=dist.subst2.amount.atc,"DISTRIBUTION.S3_AMOUNT"=dist.subst3.amount.atc, "DISTRIBUTION.S1_CONC"=dist.conc1.atc,"DISTRIBUTION.S2_CONC"=dist.conc2.atc,"DISTRIBUTION.S3_CONC"=dist.conc3.atc, "DISTRIBUTION.CONC"=dist.conc.total.atc)
+  return(output)
+}
+```
+
+```{r run_script, echo=FALSE, warning=FALSE}
+Results.products<-step_4_5_check(actual_tables)
+```
+
+```{r include=FALSE}
+ unlink(paste0(products_dir, "tmp"), recursive = T)
+```
+
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions:  
+**1.** The PRODUCTS tables does not contain any conventions that can be checked by the script.   
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+## 1. Convention check
+
+Check if conventions are satisfied.
+
+The PRODUCTS tables does not contain any conventions that can be checked by the script.
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+
+## 2. Counts of categorical variables
+
+<br>
+
+Counts will be divided based on the number of categories:     
+ 
+2 or more categories:     
+**a.** unit_of_presentation_type   
+**b.** administration_dose_form    
+**c.** administration_route     
+**d.** subst1_amount_unit   
+**e.** subst2_amount_unit   
+**f.** subst3_amount_unit    
+**g.** subst1_concentration_unit    
+**h.** subst2_concentration_unit   
+**i.** subst3_concentration_unit   
+**j.** concentration_total_content_unit   
+
+Other variables:     
+**a.** medicinal_product_id     
+**b.** medicinal_product_name     
+**c.** unit_of_presentation_num    
+**d.** medicinal_product_atc_code      
+**e.** subst1_atc_code      
+**f.** subst2_atc_code     
+**g.** subst3_atc_code   
+**h.** subst1_amount_per_form   
+**i.** subst2_amount_per_form   
+**j.** subst3_amount_per_form   
+**k.** subst1_concentration   
+**l.** subst2_concentration   
+**m.** subst3_concentration   
+**n.** concentration_total_content   
+**o.** medicinal_product_manufacturer   
+ 
+<br>
+
+#### **Counts stratified by medicinal product ATC code (2 or more categories)** 
+
+```{r count2_m, echo=FALSE, warning=FALSE}
+if(nrow(Results.products$COUNT2_M)!=0){
+Res.count2.m<-data.table(table_name="PRODUCTS", Results.products$COUNT2_M)
+setnames(Res.count2.m, "variable", "variable_name")
+#Remove empty vocabulary values
+Res.count2.m<-Res.count2.m[!(is.na(vocabulary))]
+Res.count2.m<-Res.count2.m[vocabulary!=""]
+Res.count2.m<-Res.count2.m[!(is.na(atc_code))]
+Res.count2.m<-Res.count2.m[atc_code!=""]
+if (nrow(Res.count2.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count2.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular ATC code."))
+}
+
+#Remove rows where both count and total are zero
+Res.count2.m<-Res.count2.m[(count !=0 & total !=0)]
+#Calculate percentage
+Res.count2.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count2.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count2.m, paste(products_dir,"products_atc_2categories.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count2.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count2.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count2.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"] #replace total as well if lower than 5
+
+#Put <5 counts in another dataset for graphs
+Res.count2.m.1<-Res.count2.m[count != "<5"]
+Res.count2.m.1[, count:= as.numeric(count)]
+Res.count2.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count2.m[,.N] != 0){
+datatable(Res.count2.m, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+}
+}
+
+if(nrow(Results.products$COUNT2_M)!=0){
+#Save results as .csv file
+write.csv(Res.count2.m, paste(products_less,"products_atc_2categories_masked.csv",sep="") ,row.names = F)
+}
+
+```
+
+```{r graph_count2_m, echo=FALSE, warning=FALSE}
+if(nrow(Results.products$COUNT2_M)!=0){
+  if (Res.count2.m.1[,.N] != 0){
+fig2.m<-vector(mode="list", length=length(unique(Res.count2.m.1[["variable_name"]])))
+for(i in 1:length(unique(Res.count2.m.1[["variable_name"]]))){
+  fig2.m[[i]]<-ggplotly(ggplot(Res.count2.m.1[variable_name==unique(Res.count2.m.1[["variable_name"]])[i]],
+                               aes(x = vocabulary, y = percentage, group=atc_code)) +
+                               geom_line(aes(color=atc_code)) +
+                           geom_point(aes(color=atc_code)) + 
+                              theme_classic() +
+                               ggtitle(unique(Res.count2.m.1[["variable_name"]])[i]) + 
+                               xlab("Vocabulary") +
+                               ylab("Percentage")+
+                          ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+  }
+}
+```
+
+```{r display_graph_count2_m, echo=FALSE}
+if(nrow(Results.products$COUNT2_M)!=0){
+  if (Res.count2.m.1[,.N] != 0){
+htmltools::tagList(list(fig2.m))
+  }
+}
+```
+
+#### **Counts stratified by medicinal product ATC code (other variables)**
+
+```{r count1_m, echo=FALSE, warning=FALSE}
+Res.count1.m<-data.table(table_name="PRODUCTS", Results.products$COUNT1_M)
+setnames(Res.count1.m, "variable", "variable_name")
+Res.count1.m<-Res.count1.m[(!(is.na(atc_code)))]
+Res.count1.m<-Res.count1.m[atc_code != ""]
+if (nrow(Res.count1.m[(count !=0 & total !=0)])>0) {
+  print(paste("There is(are)", nrow(Res.count1.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely misssing for a particular ATC code."))
+}
+#Remove rows where both count and total are zero
+Res.count1.m<-Res.count1.m[(count !=0 & total !=0)]
+Res.count1.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count1.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(products_dir,"products_atc_other.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count1.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count1.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+Res.count1.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+
+#Put <5 counts in another dataset for the graph
+Res.count1.m.1<-Res.count1.m[count != "<5"]
+Res.count1.m.1[, count:= as.numeric(count)]
+Res.count1.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count1.m[,.N] != 0){
+datatable(Res.count1.m,  option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+}
+
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(products_less,"products_atc_other_masked.csv",sep="") ,row.names = F)
+```
+
+```{r graph_count1_m, echo=FALSE, warning=FALSE}
+if (Res.count1.m.1[,.N] != 0){
+ggplotly(ggplot(Res.count1.m.1, aes(x = variable_name, y = percentage, group=atc_code)) +
+                               geom_line(aes(color=atc_code)) +
+                           geom_point(aes(color=atc_code)) + 
+                              theme_classic() +
+                               ggtitle("Counts stratified by product ATC code") + 
+                               xlab("Variable") +
+                               ylab("Percentage")+
+           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+```
+<br>
+
+## 3. Distribution of continous variables and counts of date variables
+
+
+<br> 
+
+### **Distribution of continous variables**
+
+The PRODUCTS table contains 8 continous variables:   
+**a.** unit_of_presentation_num    
+**b.** subst1_amount_per_form    
+**c.** subst2_amount_per_form    
+**d.** subst3_amount_per_form    
+**e.** subst1_concentration    
+**f.** subst2_concentration    
+**g.** subst3_concentration    
+**h.** concentration_total_content    
+
+
+Distribution of continous variables will be stratified by:    
+**a.** medicinal_product_atc and unit_of_presentation_type      
+**b.** subst1_atc_code and subst1_amount_unit      
+**c.** subst2_atc_code and subst2_amount_unit    
+**d.** subst3_atc_code and subst3_amount_unit    
+**e.** subst1_atc_code and subst1_concentration_unit     
+**f.** subst2_atc_code and subst2_concentration_unit     
+**g.** subst3_atc_code and subst3_concentration_unit     
+**h.** medicinal_product_atc and concentration_total_content_unit     
+
+Explanation:     
+If total_records(total number of records with complete information for each of the distributions) is smaller than 5, the distribution will not be provided.     
+
+<br>
+
+#### **Distribution of unit_of_presentation_num stratified by unit_of_presentation_type medicinal_product_atc_code**  
+
+```{r dist_pres, echo=FALSE, warning=FALSE}
+Res.pres.num<-Results.products$DISTRIBUTION.PRES.NUM
+if(!is.null(Res.pres.num) & !is.character(Res.pres.num)){
+Res.pres.num<-data.table(Res.pres.num[,1:4], 
+                             Res.pres.num[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.pres.num[total_records<5, .N]>0){
+  comment_Res.pres.num<-"The distribution of unit_of_presentation_num for one or more atc categories cannot be displayed since the number of records with complete information in unit_of_presentation_num and atc_code is smaller than 5."
+Res.pres.num_masked<-Res.pres.num[total_records>5]
+
+if (Res.pres.num_masked[,.N]>0){
+  print(comment_Res.pres.num)
+  datatable(Res.pres.num_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of unit_of_presentation_num cannot be displayed since the number of records with complete information in unit_of_presentation_num and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.pres.num, options = list(scrollX=T))}
+}
+
+if (is.null(Res.pres.num)){
+  print("The distribution of unit_of_presentation_num cannot be displayed due to complete missingness of one of the variables: unit_of_presentation_num,unit_of_presentation_type or atc_code")
+} 
+if (is.character(Res.pres.num)){
+  print(Res.pres.num)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.pres.num)) & !is.character(Res.pres.num)){
+write.csv(Res.pres.num, paste(products_dir,"products_pres_num.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.pres.num)) & !is.character(Res.pres.num)){
+if (Res.pres.num[total_records<5, .N]==0){
+write.csv(Res.pres.num, paste(products_less,"products_pres_num_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.pres.num)) & !is.character(Res.pres.num)){
+  if (Res.pres.num[total_records<5, .N]>0){
+    if(Res.pres.num_masked[,.N]>0){
+write.csv(Res.pres.num_masked, paste(products_less,"products_pres_num_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_pres, echo=FALSE, warning=FALSE}
+if(!is.null(Res.pres.num) & !is.character(Res.pres.num)){
+if (Res.pres.num[total_records<5, .N]==0){
+ggplotly(ggplot(Res.pres.num, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of unit_of_presentation_num by unit_of_presentation_type and medicinal_product_atc") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_pres_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.pres.num) & !is.character(Res.pres.num)){
+if (Res.pres.num[total_records<5, .N]>0){
+  if(Res.pres.num_masked[,.N]>0){
+ggplotly(ggplot(Res.pres.num_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of unit_of_presentation_num by unit_of_presentation_type and medicinal_product_atc") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst1_amount_per_form stratified by subst1_amount_unit and subst1_atc_code**  
+
+
+```{r dist_subst1_amount, echo=FALSE, warning=FALSE}
+Res.subst1<-Results.products$DISTRIBUTION.S1_AMOUNT
+if(!is.null(Res.subst1) & !is.character(Res.subst1)){
+Res.subst1<-data.table(Res.subst1[,1:4], 
+                             Res.subst1[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.subst1[total_records<5, .N]>0){
+  comment_Res.subst1<-"The distribution of subst1_amount_per_form for one or more atc categories cannot be displayed since the number of records with complete information in subst1_amount_per_form and atc_code is smaller than 5."
+Res.subst1_masked<-Res.subst1[total_records>5]
+
+if (Res.subst1_masked[,.N]>0){
+  print(comment_Res.subst1)
+  datatable(Res.subst1_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst1_amount_per_form cannot be displayed since the number of records with complete information in subst1_amount_per_form and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.subst1, options = list(scrollX=T))}
+}
+
+if (is.null(Res.subst1)){
+  print("The distribution of subst1_amount_per_form cannot be displayed due to complete missingness of one of the variables: subst1_amount_per_form,subst1_amount_unit or atc_code")
+} 
+if (is.character(Res.subst1)){
+  print(Res.subst1)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst1)) & !is.character(Res.subst1)){
+write.csv(Res.subst1, paste(products_dir,"products_subst1_amount.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst1)) & !is.character(Res.subst1)){
+if (Res.subst1[total_records<5, .N]==0){
+write.csv(Res.subst1, paste(products_less,"products_subst1_amount_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.subst1)) & !is.character(Res.subst1)){
+  if (Res.subst1[total_records<5, .N]>0){
+    if(Res.subst1_masked[,.N]>0){
+write.csv(Res.subst1_masked, paste(products_less,"products_subst1_amount_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_subst1_amount, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst1) & !is.character(Res.subst1)){
+if (Res.subst1[total_records<5, .N]==0){
+ggplotly(ggplot(Res.subst1, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst1_amount_per_form by subst1_amount_unit and subst1_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_subst1_amount_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst1) & !is.character(Res.subst1)){
+if (Res.subst1[total_records<5, .N]>0){
+  if(Res.subst1_masked[,.N]>0){
+ggplotly(ggplot(Res.subst1_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst1_amount_per_form by subst1_amount_unit and subst1_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst2_amount_per_form stratified by subst2_amount_unit and subst2_atc_code**  
+
+
+```{r dist_subst2_amount, echo=FALSE, warning=FALSE}
+Res.subst2<-Results.products$DISTRIBUTION.S2_AMOUNT
+if(!is.null(Res.subst2) & !is.character(Res.subst2)){
+
+Res.subst2<-data.table(Res.subst2[,1:4], 
+                             Res.subst2[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.subst2[total_records<5, .N]>0){
+  comment_Res.subst2<-"The distribution of subst2_amount_per_form for one or more atc categories cannot be displayed since the number of records with complete information in subst2_amount_per_form and atc_code is smaller than 5."
+Res.subst2_masked<-Res.subst2[total_records>5]
+
+if (Res.subst2_masked[,.N]>0){
+  print(comment_Res.subst2)
+  datatable(Res.subst2_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst2_amount_per_form cannot be displayed since the number of records with complete information in subst2_amount_per_form and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.subst2, options = list(scrollX=T))}
+}
+
+if (is.null(Res.subst2)){
+  print("The distribution of subst2_amount_per_form cannot be displayed due to complete missingness of one of the variables: subst2_amount_per_form,subst2_amount_unit or atc_code")
+} 
+if (is.character(Res.subst2)){
+  print(Res.subst2)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst2)) & !is.character(Res.subst2)){
+write.csv(Res.subst2, paste(products_dir,"products_subst2_amount.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst2)) & !is.character(Res.subst2)){
+if (Res.subst2[total_records<5, .N]==0){
+write.csv(Res.subst2, paste(products_less,"products_subst2_amount_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.subst2)) & !is.character(Res.subst2)){
+  if (Res.subst2[total_records<5, .N]>0){
+    if(Res.subst2_masked[,.N]>0){
+write.csv(Res.subst2_masked, paste(products_less,"products_subst2_amount_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_subst2_amount, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst2) & !is.character(Res.subst2)){
+if (Res.subst2[total_records<5, .N]==0){
+ggplotly(ggplot(Res.subst2, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst2_amount_per_form by subst2_amount_unit and subst2_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_subst2_amount_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst2) & !is.character(Res.subst2)){
+if (Res.subst2[total_records<5, .N]>0){
+  if(Res.subst2_masked[,.N]>0){
+ggplotly(ggplot(Res.subst2_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst2_amount_per_form by subst2_amount_unit and subst2_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst3_amount_per_form stratified by subst2_amount_unit and subst3_atc_code**  
+
+```{r dist_subst3_amount, echo=FALSE, warning=FALSE}
+Res.subst3<-Results.products$DISTRIBUTION.S3_AMOUNT
+if(!is.null(Res.subst3) & !is.character(Res.subst3)){
+
+Res.subst3<-data.table(Res.subst3[,1:4], 
+                             Res.subst3[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.subst3[total_records<5, .N]>0){
+  comment_Res.subst3<-"The distribution of subst3_amount_per_form for one or more atc categories cannot be displayed since the number of records with complete information in subst3_amount_per_form and atc_code is smaller than 5."
+Res.subst3_masked<-Res.subst3[total_records>5]
+
+if (Res.subst3_masked[,.N]>0){
+  print(comment_Res.subst3)
+  datatable(Res.subst3_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst3_amount_per_form cannot be displayed since the number of records with complete information in subst3_amount_per_form and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.subst3, options = list(scrollX=T))}
+}
+
+if (is.null(Res.subst3)){
+  print("The distribution of subst3_amount_per_form cannot be displayed due to complete missingness of one of the variables: subst3_amount_per_form,subst3_amount_unit or atc_code")
+} 
+if (is.character(Res.subst3)){
+  print(Res.subst3)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst3)) & !is.character(Res.subst3)){
+write.csv(Res.subst3, paste(products_dir,"products_subst3_amount.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.subst3)) & !is.character(Res.subst3)){
+if (Res.subst3[total_records<5, .N]==0){
+write.csv(Res.subst3, paste(products_less,"products_subst3_amount_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.subst3)) & !is.character(Res.subst3)){
+  if (Res.subst3[total_records<5, .N]>0){
+    if(Res.subst3_masked[,.N]>0){
+write.csv(Res.subst3_masked, paste(products_less,"products_subst3_amount_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_subst3_amount, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst3) & !is.character(Res.subst3)){
+if (Res.subst3[total_records<5, .N]==0){
+ggplotly(ggplot(Res.subst3, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst3_amount_per_form by subst3_amount_unit and subst3_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_subst3_amount_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.subst3) & !is.character(Res.subst3)){
+if (Res.subst3[total_records<5, .N]>0){
+  if(Res.subst3_masked[,.N]>0){
+ggplotly(ggplot(Res.subst3_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst3_amount_per_form by subst3_amount_unit and subst3_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst1_concentration stratified by subst1_concentration_unit and subst1_atc_code**  
+
+
+```{r dist_conc1, echo=FALSE, warning=FALSE}
+Res.conc1<-Results.products$DISTRIBUTION.S1_CONC
+if(!is.null(Res.conc1) & !is.character(Res.conc1)){
+Res.conc1<-data.table(Res.conc1[,1:4], 
+                             Res.conc1[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.conc1[total_records<5, .N]>0){
+  comment_Res.conc1<-"The distribution of subst1_concentration for one or more atc categories cannot be displayed since the number of records with complete information in subst1_concentration and atc_code is smaller than 5."
+Res.conc1_masked<-Res.conc1[total_records>5]
+
+if (Res.conc1_masked[,.N]>0){
+  print(comment_Res.conc1)
+  datatable(Res.conc1_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst1_concentration cannot be displayed since the number of records with complete information in subst1_concentration and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.conc1, options = list(scrollX=T))}
+}
+
+if (is.null(Res.conc1)){
+  print("The distribution of subst1_concentration cannot be displayed due to complete missingness of one of the variables: subst1_concentration, subst1_concentration_unit or atc_code")
+} 
+if (is.character(Res.conc1)){
+  print(Res.conc1)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc1)) & !is.character(Res.conc1)){
+write.csv(Res.conc1, paste(products_dir,"products_conc1.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc1)) & !is.character(Res.conc1)){
+if (Res.conc1[total_records<5, .N]==0){
+write.csv(Res.conc1, paste(products_less,"products_conc1_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.conc1)) & !is.character(Res.conc1)){
+  if (Res.conc1[total_records<5, .N]>0){
+    if(Res.conc1_masked[,.N]>0){
+write.csv(Res.conc1_masked, paste(products_less,"products_conc1_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_conc1, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc1) & !is.character(Res.conc1)){
+if (Res.conc1[total_records<5, .N]==0){
+ggplotly(ggplot(Res.conc1, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst1_concentration by subst1_concentration_unit and subst1_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_conc1_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc1) & !is.character(Res.conc1)){
+if (Res.conc1[total_records<5, .N]>0){
+  if(Res.conc1_masked[,.N]>0){
+ggplotly(ggplot(Res.conc1_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst1_concentration by subst1_concentration_unit and subst1_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst2_concentration stratified by subst2_concentration_unit and subst2_atc_code**  
+
+
+```{r dist_conc2, echo=FALSE, warning=FALSE}
+Res.conc2<-Results.products$DISTRIBUTION.S2_CONC
+if(!is.null(Res.conc2) & !is.character(Res.conc2)){
+Res.conc2<-data.table(Res.conc2[,1:4], 
+                             Res.conc2[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.conc2[total_records<5, .N]>0){
+  comment_Res.conc2<-"The distribution of subst2_concentration for one or more atc categories cannot be displayed since the number of records with complete information in subst2_concentration and atc_code is smaller than 5."
+Res.conc2_masked<-Res.conc2[total_records>5]
+
+if (Res.conc2_masked[,.N]>0){
+  print(comment_Res.conc2)
+  datatable(Res.conc2_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst2_concentration cannot be displayed since the number of records with complete information in subst2_concentration and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.conc2, options = list(scrollX=T))}
+}
+
+if (is.null(Res.conc2)){
+  print("The distribution of subst2_concentration cannot be displayed due to complete missingness of one of the variables: subst2_concentration, subst2_concentration_unit or atc_code")
+} 
+if (is.character(Res.conc2)){
+  print(Res.conc2)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc2)) & !is.character(Res.conc2)){
+write.csv(Res.conc2, paste(products_dir,"products_conc2.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc2)) & !is.character(Res.conc2)){
+if (Res.conc2[total_records<5, .N]==0){
+write.csv(Res.conc2, paste(products_less,"products_conc2_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.conc2)) & !is.character(Res.conc2)){
+  if (Res.conc2[total_records<5, .N]>0){
+    if(Res.conc2_masked[,.N]>0){
+write.csv(Res.conc2_masked, paste(products_less,"products_conc2_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_conc2, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc2) & !is.character(Res.conc2)){
+if (Res.conc2[total_records<5, .N]==0){
+ggplotly(ggplot(Res.conc2, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst2_concentration by subst2_concentration_unit and subst2_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_conc2_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc2) & !is.character(Res.conc2)){
+if (Res.conc2[total_records<5, .N]>0){
+  if(Res.conc2_masked[,.N]>0){
+ggplotly(ggplot(Res.conc2_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst2_concentration by subst2_concentration_unit and subst2_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+#### **Distribution of subst3_concentration stratified by subst3_concentration_unit and subst3_atc_code**  
+
+
+```{r dist_conc3, echo=FALSE, warning=FALSE}
+Res.conc3<-Results.products$DISTRIBUTION.S3_CONC
+if(!is.null(Res.conc3) & !is.character(Res.conc3)){
+Res.conc3<-data.table(Res.conc3[,1:4], 
+                             Res.conc3[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.conc3[total_records<5, .N]>0){
+  comment_Res.conc3<-"The distribution of subst3_concentration for one or more atc categories cannot be displayed since the number of records with complete information in subst3_concentration and atc_code is smaller than 5."
+Res.conc3_masked<-Res.conc3[total_records>5]
+
+if (Res.conc3_masked[,.N]>0){
+  print(comment_Res.conc3)
+  datatable(Res.conc3_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of subst3_concentration cannot be displayed since the number of records with complete information in subst3_concentration and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.conc3, options = list(scrollX=T))}
+}
+
+if (is.null(Res.conc3)){
+  print("The distribution of subst3_concentration cannot be displayed due to complete missingness of one of the variables: subst3_concentration, subst3_concentration_unit or atc_code")
+} 
+if (is.character(Res.conc3)){
+  print(Res.conc3)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc3)) & !is.character(Res.conc3)){
+write.csv(Res.conc3, paste(products_dir,"products_conc3.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc3)) & !is.character(Res.conc3)){
+if (Res.conc3[total_records<5, .N]==0){
+write.csv(Res.conc3, paste(products_less,"products_conc3_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.conc3)) & !is.character(Res.conc3)){
+  if (Res.conc3[total_records<5, .N]>0){
+    if(Res.conc3_masked[,.N]>0){
+write.csv(Res.conc3_masked, paste(products_less,"products_conc3_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_conc3, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc3) & !is.character(Res.conc3)){
+if (Res.conc3[total_records<5, .N]==0){
+ggplotly(ggplot(Res.conc3, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst3_concentration by subst3_concentration_unit and subst3_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_conc3_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc3) & !is.character(Res.conc3)){
+if (Res.conc3[total_records<5, .N]>0){
+  if(Res.conc3_masked[,.N]>0){
+ggplotly(ggplot(Res.conc3_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of subst3_concentration by subst3_concentration_unit and subst3_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+
+#### **Distribution of concentration_total_content stratified by concentration_total_content_unit and medicinal_product_atc_code**  
+
+
+```{r dist_conc_total, echo=FALSE, warning=FALSE}
+Res.conc.total<-Results.products$DISTRIBUTION.CONC
+if(!is.null(Res.conc.total) & !is.character(Res.conc.total)){
+
+Res.conc.total<-data.table(Res.conc.total[,1:4], 
+                             Res.conc.total[, lapply(.SD, FUN= function(x) round(x, 2)), .SDcols=c('mean', 'SD', 'median', 'IQR', 'skewness', 'kurtosis', 'total_records')])
+
+if (Res.conc.total[total_records<5, .N]>0){
+  comment_Res.conc.total<-"The distribution of concentration_total_content for one or more atc categories cannot be displayed since the number of records with complete information in concentration_total_content and atc_code is smaller than 5."
+Res.conc.total_masked<-Res.conc.total[total_records>5]
+
+if (Res.conc.total_masked[,.N]>0){
+  print(comment_Res.conc.total)
+  datatable(Res.conc.total_masked, options = list(scrollX=T))
+  } else {
+print("The distribution of concentration_total_content cannot be displayed since the number of records with complete information in concentration_total_content and atc_code is smaller than 5.")
+  }
+
+} else {
+  datatable(Res.conc.total, options = list(scrollX=T))}
+}
+
+if (is.null(Res.conc.total)){
+  print("The distribution of concentration_total_content cannot be displayed due to complete missingness of one of the variables: concentration_total_content, concentration_total_content_unit or atc_code")
+} 
+if (is.character(Res.conc.total)){
+  print(Res.conc.total)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc.total)) & !is.character(Res.conc.total)){
+write.csv(Res.conc.total, paste(products_dir,"products_conc_total.csv",sep="") ,row.names = F)
+}
+
+#Save results as .csv file
+if(!(is.null(Res.conc.total)) & !is.character(Res.conc.total)){
+if (Res.conc.total[total_records<5, .N]==0){
+write.csv(Res.conc.total, paste(products_less,"products_conc_total_masked.csv",sep="") ,row.names = F)
+} 
+}
+
+if(!(is.null(Res.conc.total)) & !is.character(Res.conc.total)){
+  if (Res.conc.total[total_records<5, .N]>0){
+    if(Res.conc.total_masked[,.N]>0){
+write.csv(Res.conc.total_masked, paste(products_less,"products_conc_total_masked.csv",sep="") ,row.names = F)
+  }
+  }
+}
+
+```
+
+<br>
+
+```{r graph_dist_conc_total, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc.total) & !is.character(Res.conc.total)){
+if (Res.conc.total[total_records<5, .N]==0){
+ggplotly(ggplot(Res.conc.total, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of concentration_total_content by concentration_total_content_unit and medicinal_product_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+}
+```
+
+```{r graph_dist_conc_total_masked, echo=FALSE, warning=FALSE}
+if(!is.null(Res.conc.total) & !is.character(Res.conc.total)){
+if (Res.conc.total[total_records<5, .N]>0){
+  if(Res.conc.total_masked[,.N]>0){
+ggplotly(ggplot(Res.conc.total_masked, aes(x = unit, y = mean)) +
+                               geom_linerange(
+                                 aes(x=unit, ymin=0, ymax=mean, group= atc_code),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=atc_code),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Distribution of concentration_total_content by concentration_total_content_unit and medicinal_product_atc_code") + 
+                               xlab("Unit") +
+                               ylab("Mean")+
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+ }
+}
+}
+```
+
+
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 4. Calculations
+
+<br> 
+
+In this section is explained how each count is being calculated.  
+Numerator= count  
+Denominator= total   
+
+```{r calculations_table, echo=FALSE}
+calculations_products<-data.table(rbind(
+  cbind(calculation= "Counts stratified by product ATC code level 3(other variables)", variable_name=c("medicinal_product_id", "medicinal_product_name", "unit_of_presentation_num", "medicinal_product_atc_code", "subst1_atc_code", "subst2_atc_code", "subst3_atc_code", "subst1_amount_per_form", "subst2_amount_per_form", "subst3_amount_per_form", "subst1_concentration", "subst2_concentration", "subst3_concentration", "concentration_total_content", "medicinal_product_manufacturer"), numerator=c("Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code", "Number of complete observations with a recorded product ATC code"), denominator=c("Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code")),
+      cbind(calculation= "Counts stratified by product ATC code level 3(2 or more categories)", variable_name=c("unit_of_presentation_type", "administration_dose_form", "administration_route", "subst1_amount_unit", "subst2_amount_unit", "subst3_amount_unit", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content_unit"), numerator=c("Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code", "Number of complete observations per category with a recorded product ATC code"), denominator=c("Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code", "Number of total observations with a recorded product ATC code"))
+))
+datatable(calculations_products)
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 5. Output folder structure   
+
+If a file is missing that means that it was not possible to calculate it based on the available data.  
+
+PRODUCTS     
+**1.** PRODUCTS.html: Rmarkdown report   
+**2.** `products_atc_2categories.csv`: counts of variables with 2 or more categories stratified by medicinal_product_atc truncated to the third level       
+**3.** `products_atc_other.csv`: counts of other variables stratified by medicinal_product_atc truncated to the third level   
+**4.** `products_pres_num.csv`: distribution of unit_of_presentation_num stratified by unit_of_presentation_type and  medicinal_product_atc truncated to the third level     
+**5.** `products_subst1_amount.csv`: distribution of subst1_amount_per_form stratified by subst1_amount_unit and subst1_atc_code truncated to the third level   
+**6.** `products_subst2_amount.csv`: distribution of subst2_amount_per_form stratified by subst2_amount_unit and subst2_atc_code truncated to the third level    
+**7.** `products_subst3_amount.csv`: distribution of subst3_amount_per_form stratified by subst3_amount_unit and subst3_atc_code truncated to the third level      
+**8.** `products_conc1.csv`: distribution of subst1_concentration stratified by subst1_concentration_unit and subst1_atc_code truncated to the third level     
+**9.** `products_conc2.csv`: distribution of subst2_concentration stratified by subst2_concentration_unit and subst2_atc_code truncated to the third level    
+**10.** `products_conc3.csv`: distribution of subst3_concentration stratified by subst3_concentration_unit and subst3_atc_code truncated to the third level    
+**11.** `products_conc_total.csv`: distribution of concentration_total_content stratified by concentration_total_content_unit and medicinal_product_atc truncated to the third level   
+**12.** Masked:       
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `products_atc_2categories_masked.csv`: counts of variables with 2 or more categories stratified by medicinal_product_atc truncated to the third level where counts smaller than 5 are masked           
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `products_atc_other_masked.csv`: counts of other variables stratified by medicinal_product_atc truncated to the third level where counts smaller than 5 are masked        
+&nbsp;&nbsp;&nbsp;&nbsp;***c.*** `products_pres_num.csv`: distribution of unit_of_presentation_num stratified by unit_of_presentation_type and  medicinal_product_atc truncated to the third level where rows with number of total records smaller than 5 are removed             
+&nbsp;&nbsp;&nbsp;&nbsp;***d.*** `products_subst1_amount.csv`: distribution of subst1_amount_per_form stratified by subst1_amount_unit and subst1_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed        
+&nbsp;&nbsp;&nbsp;&nbsp;***e.*** `products_subst2_amount.csv`: distribution of subst2_amount_per_form stratified by subst2_amount_unit and subst2_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed             
+&nbsp;&nbsp;&nbsp;&nbsp;***f.*** `products_subst3_amount.csv`: distribution of subst3_amount_per_form stratified by subst3_amount_unit and subst3_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed       
+&nbsp;&nbsp;&nbsp;&nbsp;***g.*** `products_conc1.csv`: distribution of subst1_concentration stratified by subst1_concentration_unit and subst1_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed    
+&nbsp;&nbsp;&nbsp;&nbsp;***h.***`products_conc2.csv`: distribution of subst2_concentration stratified by subst2_concentration_unit and subst2_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed     
+&nbsp;&nbsp;&nbsp;&nbsp;***i.*** `products_conc3.csv`: distribution of subst3_concentration stratified by subst3_concentration_unit and subst3_atc_code truncated to the third level where rows with number of total records smaller than 5 are removed     
+&nbsp;&nbsp;&nbsp;&nbsp;***j.*** `products_conc_total.csv`: distribution of concentration_total_content stratified by concentration_total_content_unit and medicinal_product_atc truncated to the third level where rows with number of total records smaller than 5 are removed    
+
+</div>
+

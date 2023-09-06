@@ -1,0 +1,656 @@
+---
+title: "CONCEPTION- Level 1 checks: METADATA table"
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+
+```{r create_dir, include=FALSE}
+if ("METADATA" %in% list.files(output_dir)){
+  m_dir<-paste(output_dir, "METADATA/", sep="")
+  m_var<-paste(m_dir, "Variables/", sep="")
+} else {
+#Create the METADATA folder in the output dir
+dir.create(paste(output_dir, "METADATA", sep=""))
+  m_dir<-paste(output_dir, "METADATA/", sep="")
+  dir.create(paste(m_dir,"Variables", sep=""))
+m_var<-paste(m_dir, "Variables/", sep="")
+}
+```
+
+```{css, echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 30px 10px 30px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+```{r get_metadata_dir, include=FALSE}
+#Get all files in the CDM directory that are .csv files and have pattern METADATA
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+metadata_dir<-directory_CDM[grepl(pattern = "METADATA", x = directory_CDM)]
+```
+
+```{r presence_function, echo=FALSE}
+if(length(metadata_dir) > 1){
+  presence<-"Yes"
+  error<-TRUE
+  comment<-"There are more than two files that contain the pattern METADATA in your working directory. There should be only one. Fix the error and run the script again."
+}
+if (length(metadata_dir) ==0){
+  presence<-"No"
+  error<-TRUE
+  comment<-"There are no files that contain the pattern METADATA in your working directory. Fix the error and run the script again."
+}
+if(length(metadata_dir) == 1){
+  presence<-"Yes"
+  error<-FALSE
+  comment<-"METADATA table is present in the working directory."
+}
+
+presence_table<-data.table(table_name="METADATA", presence= presence, error=error, comment=comment)
+
+```
+
+```{r list_of_variables_m, include=FALSE}
+metadata_var<-c("type_of_metadata", "tablename", "columnname", "other", "values")
+type_metadata_var<-c("presence_of_table", "presence_of_column", "list_of_values", "subpopulations", "op_meaning_sets",  "op_meanings_list_per_set", "exclude_meaning")
+tables_CDM.m<-c("VISIT_OCCURRENCE", "EVENTS", "MEDICINES", "PROCEDURES", "VACCINES", 
+              "MEDICAL_OBSERVATIONS", "EUROCAT", "SURVEY_ID", "SURVEY_OBSERVATIONS", 
+              "PERSONS", "OBSERVATION_PERIODS", "PERSON_RELATIONSHIPS", "PRODUCTS", 
+              "CDM_SOURCE", "INSTANCE")
+mandatory_tab<-c("CDM_SOURCE", "PERSONS", "OBSERVATION_PERIODS", "MEDICINES", "VACCINES", "EVENTS", "PROCEDURES", "MEDICAL_OBSERVATIONS", "PERSON_RELATIONSHIPS", "PRODUCTS")
+```
+
+```{r list_of_functions, include=FALSE}
+#########################################################################################################
+#List of functions
+#########################################################################################################
+
+#Function that checks if a variable is present as name irrespective of capital/lowercase letters or content
+presence_check<-function(dt, list_var){
+  a<-data.table("variable_name"=list_var, "presence"= list_var %in% tolower(colnames(dt)))
+  return(a)
+}
+
+#Lowercase check
+lowercase_check<-function(dt){
+  a<-data.table(variable_name=colnames(dt), lowercase=colnames(dt)==tolower(colnames(dt)))
+  return(a)
+}
+
+#Consistency check
+consistency_check<-function(dt){
+  res<-vector(mode="list", length=9)
+  #presence_of_table
+  a<-dt[type_of_metadata=="presence_of_table" & is.na(tablename)]
+  if (nrow(a)==0){
+    res[[1]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=FALSE, comment=NA)
+  } else {
+    res[[1]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=TRUE, comment="There are empty values in column `tablename` for this variable.")
+  }
+  b<-dt[type_of_metadata=="presence_of_table" & !is.na(columnname)]
+  if (nrow(b)==0){
+    res[[2]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=FALSE, comment=NA)
+  } else {
+    res[[2]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=TRUE, comment="The variable `columnname` should be empty for this variable.")
+  }
+  c<-dt[type_of_metadata=="presence_of_table" & is.na(values)]
+  if (nrow(c)==0){
+    res[[3]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=FALSE, comment=NA)
+  } else {
+    res[[3]]<-data.table(variable_name="type_of_metadata", value="presence_of_table", error=TRUE, comment="There are empty values in column `values` for this variable.")
+  }
+  
+  #presence_of_column
+  d<-dt[type_of_metadata=="presence_of_column" & is.na(tablename)]
+  if (nrow(d)==0){
+    res[[4]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=FALSE, comment=NA)
+  } else {
+    res[[4]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=TRUE, comment="There are empty values in column `tablename` for this variable.")
+  }
+  e<-dt[type_of_metadata=="presence_of_column" & is.na(columnname)]
+  if (nrow(e)==0){
+    res[[5]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=FALSE, comment=NA)
+  } else {
+    res[[5]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=TRUE, comment="There are empty values in column `columnname` for this variable.")
+  }
+  f<-dt[type_of_metadata=="presence_of_column" & is.na(values)]
+  if (nrow(f)==0){
+    res[[6]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=FALSE, comment=NA)
+  } else {
+    res[[6]]<-data.table(variable_name="type_of_metadata", value="presence_of_column", error=TRUE, comment="There are empty values in column `values` for this variable.")
+  }
+  
+  #list_of_values
+  g<-dt[type_of_metadata=="list_of_values" & is.na(tablename)]
+  if (nrow(g)==0){
+    res[[7]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=FALSE, comment=NA)
+  } else {
+    res[[7]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=TRUE, comment="There are empty values in column `tablename` for this variable.")
+  }
+  h<-dt[type_of_metadata=="list_of_values" & is.na(columnname)]
+  if (nrow(h)==0){
+    res[[8]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=FALSE, comment=NA)
+  } else {
+    res[[8]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=TRUE, comment="There are empty values in column `columnname` for this variable.")
+  }
+  i<-dt[type_of_metadata=="list_of_values" & is.na(values)]
+  if (nrow(i)==0){
+    res[[9]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=FALSE, comment=NA)
+  } else {
+    res[[9]]<-data.table(variable_name="type_of_metadata", value="list_of_values", error=TRUE, comment="There are empty values in column `values` for this variable.")
+  }
+  res<-do.call(rbind,res)
+  return(res[error==TRUE])
+}
+
+#Compare the list of tables present in the directory with the list of tables present in the metadata table
+comparison<-function(dt, list_of_tables, directory_files){
+a<-vector(mode="list", length = length(list_of_tables))
+met<-vector(mode="list", length = length(list_of_tables))
+for (i in 1:length(list_of_tables)){
+a[[i]]<-grepl(pattern=list_of_tables[i], directory_files)
+met[[i]]<-grepl(pattern=list_of_tables[i], dt[type_of_metadata=="presence_of_table" & values == "Yes", tablename])
+  }
+b<-vector(mode="list", length = length(list_of_tables))
+for (i in 1:length(list_of_tables)){
+  if (TRUE %in% a[[i]]){
+    b[[i]]<-data.table(table_name=list_of_tables[i], presence_directory=TRUE)
+  } else {
+    b[[i]]<-data.table(table_name=list_of_tables[i], presence_directory=FALSE)
+  }
+}
+b<-do.call(rbind,b)
+c<-vector(mode="list", length = length(list_of_tables))
+for (i in 1:length(list_of_tables)){
+  if (TRUE %in% met[[i]]){
+    c[[i]]<-data.table(table_name=list_of_tables[i], presence_metadata=TRUE)
+  } else {
+    c[[i]]<-data.table(table_name=list_of_tables[i], presence_metadata=FALSE)
+  }
+}
+c<-do.call(rbind,c)
+
+res<-merge(b,c, by="table_name", all=TRUE)
+
+#Remove tables that are not present
+res<-res[!(presence_directory==FALSE & presence_metadata==FALSE)]
+present.tables<-res[presence_directory==TRUE & presence_metadata==TRUE]
+res2<-res[!(presence_directory==TRUE & presence_metadata==TRUE)]
+res2[presence_directory==TRUE & presence_metadata==FALSE, comment:="The table is present in the directory but not in the METADATA table."]
+res2[presence_directory==FALSE & presence_metadata==TRUE, comment:="The table is present in the METADATA table but not in the directory."]
+Res<-vector(mode="list", length=2)
+Res[[1]]<-present.tables
+Res[[2]]<-res2
+return(Res)
+}
+
+```
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions for the METADATA table:  
+**1.** All variables need to be present as column names even if empty.    
+**2.** Variable names need to be written in lowercase.  
+**3.** All mandatory variables need to be present.  
+**4.** All conventions need to be statisfied.
+
+Instruction to fill in the METADATA table:   
+**1.** The `values` variable should be filled with Yes/No for `presence_of_table` and `presence_of_column`.     
+**2.** In `presence_of_column` fill in only non-mandatory variable names.   
+**3.** In list_of_values both mandatory and non-mandatory variables can be present as long as they have a vocabulary. Check the column `vocabulary` in the [CDM](https://docs.google.com/spreadsheets/d/1hc-TBOfEzRBthGP78ZWIa13C0RdhU7bK/edit#gid=598685016). A variable can have a fixed vocabulary (allowable values are written in the vocabulary column in the CDM) or an open vocabulary and values are present in the [vocabularies](https://docs.google.com/spreadsheets/u/0/d/1vPZwzQyjXlmmE1vvx3r1Jkw3Juz2DLjU9dKgEo8MijE/htmlview#). If a variable is completely empty, do not include this variable in list_of_values.     
+**4.** When completing `list_of_values`, separate values by space.   
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+## 1. Table formatting 
+
+<br>
+
+#### **Presence of table**
+
+```{r presence_output, echo=FALSE}
+datatable(presence_table, options = list(scrollX=TRUE))
+```
+
+```{r echo=FALSE}
+if (presence_table[error==TRUE, .N]>0){
+  knitr::knit_exit() #quit the script
+}
+```
+
+```{r fields_metadata, echo=FALSE, warning=FALSE}
+#Check if more than one metadata table is present
+if(length(metadata_dir) == 1){
+  #First check the number of fields
+  
+  #Get the number of rows of the csv file without opening the file
+    no <-length(readLines(paste(path_dir, metadata_dir, sep = "")))-1 #substract one to remove the header
+    #Load the file and then get the number of rows (if the number of fields is not correct r imports till the error occurs)
+    suppressWarnings(df<-fread(paste(path_dir, metadata_dir, sep=""), stringsAsFactors = FALSE))
+    ac.no <-nrow(df) #save number of rows
+    #Check if the number of rows match
+    #The first_row shows the first line of the csv file that has a problem(it incorporates the header and the next line)
+    if (no == ac.no) {
+      error <- FALSE
+      first_row <- "N/A"
+    } else { 
+      error <- TRUE
+      if (no - ac.no == 1){
+        first_row <-ac.no + 1
+      } else {
+      first_row<- ac.no + 2 #shows the number on the csv not the number of observation
+      }
+    }
+    #Save the results
+   fld<- data.table(cdm_table="METADATA", table_name=metadata_dir, 
+                             csv_rows = no, current_table_rows = ac.no, first_row_error =first_row, error = error)
+}
+```
+
+```{r get_metadata_table, echo=FALSE}
+if (fld[error==TRUE,.N]>0){
+  datatable(data.table(fld, comment="This row in your .csv file has missing or extra fields. Fix the error and run the script again."))
+  
+} else {
+  METADATA<-fread(paste(path_dir, metadata_dir, sep=""), stringsAsFactors = F, colClasses="character")
+  #Replace empty space with NA
+  METADATA<-METADATA[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+  #Save metadata as .csv file
+write.csv(METADATA, paste(m_dir,"METADATA.csv",sep="") ,row.names = F)
+}
+rm(df)
+```
+
+```{r echo=FALSE}
+if (fld[error==TRUE,.N]>0){
+    knitr::knit_exit()
+}
+rm(fld)
+```
+
+#### **Presence of variables check**
+
+Check if variables are present as names in the CDM tables.  
+
+```{r presence_check_output, echo=FALSE}
+#presence_check
+if (nrow(presence_check(METADATA, metadata_var)[presence==FALSE])==0){
+  print("All variables are present in the METADATA table.")
+} else {
+  datatable(data.table(table_name="METADATA", presence_check(METADATA, metadata_var)[presence==FALSE], comment="This variable is missing in your METADATA table. Add it and run the script again."), option=list(scrollX=TRUE))
+}
+```
+
+```{r echo=FALSE}
+if (nrow(presence_check(METADATA, metadata_var)[presence==FALSE])>0){
+  knitr::knit_exit() #quit the script 
+}
+```
+
+
+#### **Lower-case check**
+
+Check if column names are written in lower case.  
+
+```{r lowercase_check_output, echo=FALSE}
+#Lowercase check
+if (nrow(lowercase_check(METADATA)[lowercase==FALSE])==0){
+  print("All variables are written in lowercase.")
+} else {
+  datatable(data.table(table_name="METADATA",lowercase_check(METADATA)[lowercase==FALSE], comment="This variable contains one or more letters in uppercase. Fix the error and run the script again."),option=list(scrollX=TRUE))
+}
+```
+
+```{r echo=FALSE}
+if (nrow(lowercase_check(METADATA)[lowercase==FALSE])>0){
+    knitr::knit_exit() #quit the script 
+}
+```
+
+
+#### **Values check**
+
+Check if the variables in the table contain only allowable values.     
+    
+type_of_metadata is allowed to take values:    
+**a.** presence_of_table    
+**b.** presence_of_column     
+**c.** list_of_values    
+**d.** subpopulations     
+**e.** op_meaning_sets     
+**f.** op_meanings_list_per_set     
+**g.** exclude_meaning     
+
+tablename is allowed to take values:     
+**a.** Only names of tables from the Common Data Model      
+
+```{r values_check_results, include=FALSE}
+#The first column is allowed to have only type_metadata_var values
+#The second column is allowed to have only names of CDM tables
+values.m<-unique(na.omit(METADATA[["type_of_metadata"]]))
+tables.m<-unique(na.omit(METADATA[["tablename"]]))
+Res.col12<-vector(mode="list", length=2)
+
+if (length(setdiff(values.m, type_metadata_var)) >0){
+  Res.col12[[1]]<-data.table(table_name="METADATA", variable_name="type_of_metadata", values=setdiff(values.m, type_metadata_var), error=TRUE, comment="Not allowable value present.")
+} else {
+    Res.col12[[1]]<-data.table(table_name="METADATA", variable_name="type_of_metadata", values= type_metadata_var, error=FALSE, comment="Allowable value present.")
+}
+
+if (length(setdiff(tables.m, tables_CDM.m)) >0){
+  Res.col12[[2]]<-data.table(table_name="METADATA", variable_name="tablename", values=setdiff(tables.m, tables_CDM.m), error=TRUE, comment="Not allowable value present.")
+} else {
+    Res.col12[[2]]<-data.table(table_name="METADATA", variable_name="tablename", values= tables.m, error=FALSE, comment="Allowable value present.")
+}
+
+Res.col12<-do.call(rbind, Res.col12)
+```
+
+```{r values_check_output, echo=FALSE}
+if (Res.col12[error==TRUE, .N]>0){
+datatable(Res.col12[error==TRUE],option=list(scrollX=TRUE))
+} else {
+  print("The METADATA table contains only allowable values.")
+}
+
+```
+
+```{r echo=FALSE}
+if (Res.col12[error==TRUE, .N]>0){
+  print("Fix the above mentioned error then run the script again.")
+}
+```
+
+```{r echo=FALSE}
+if (Res.col12[error==TRUE, .N]>0){
+   knitr::knit_exit() #quit the script 
+}
+```
+
+
+#### **Check conventions**
+
+Check if conventions are satisfied.    
+    
+Conventions:     
+**a.** For the variables type_of_metadata=`presence_of_table`, tablename and values should be complete and columnname should be empty.      
+**b.** For the variables type_of_metadata=`presence_of_column` and type_of_metadata=`list_of_values`, tablename, columnname and values should be complete.        
+
+```{r conventions_output, echo=FALSE}
+#Output for conventions
+Res.conv<-consistency_check(dt=METADATA)
+if (Res.conv[,.N]>0){
+datatable(Res.conv, option=list(scrollX=TRUE))} else {
+  print("All conventions are satisfied.")
+}
+```
+
+```{r echo=FALSE}
+if (Res.conv[error==TRUE, .N]>0){
+  print("Fix the above mentioned error then run the script again.")
+}
+```
+
+```{r echo=FALSE}
+if (Res.conv[error==TRUE, .N]>0){
+    knitr::knit_exit() #quit the script 
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+
+## 2. Consistency check
+<br>
+
+```{r consistency_output, include=FALSE}
+Res.comp<-comparison(dt=METADATA, list_of_tables = tables_CDM.m, directory_files = directory_CDM)
+```
+
+#### **Comparison between METADATA and directory**  
+
+Check if there are any inconsistencies between the information in the METADATA table and the working directory.   
+If a mandatory table is missing either in the directory or the METADATA table it will be colored <span style="color: red;">**red**</span>. You need to first provide that table or fix the information and then proceed with the next steps.    
+
+Mandatory tables:  
+**a.** METADATA   
+**b.** CDM_SOURCE     
+**c.** EVENTS (not if EUROCAT table is present)    
+**d.** MEDICINES (not if EUROCAT table is present)     
+**e.** PROCEDURES (not if EUROCAT table is present)   
+**f.** VACCINES (not if EUROCAT table is present)    
+**g.** MEDICAL_OBSERVATIONS (not if EUROCAT table is present)    
+**h.** PERSONS    
+**i.** OBSERVATION_PERIODS (not if EUROCAT table is present)    
+**j.** PERSON_RELATIONSHIPS (not if EUROCAT table is present)     
+**k.** PRODUCTS (not if EUROCAT table is present)    
+
+```{r comparison_output, echo=FALSE}
+#Output for tables that might be missing either in the METADATA table or the directory
+if (nrow(Res.comp[[2]]) !=0){ 
+  Res.inconsistency<-Res.comp[[2]]
+#add a filter variable which will be 1 if table is mandatory and 0 if not
+for (i in 1:nrow(Res.inconsistency)){
+  if ((Res.inconsistency[i,table_name] %in% mandatory_tab)==TRUE){
+    Res.inconsistency<-Res.inconsistency[i, filter:=1]
+  } else {
+    Res.inconsistency<-Res.inconsistency[i, filter:=0]
+  }
+}
+  tmp<-Res.comp[[1]]
+  
+    if ((("EVENTS" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="EVENTS", filter:=0]
+    }
+    if ((("MEDICINES" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="MEDICINES", filter:=0]
+    }
+    if ((("PROCEDURES" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="PROCEDURES", filter:=0]
+    }
+    if ((("MEDICAL_OBSERVATIONS" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="MEDICAL_OBSERVATIONS", filter:=0]
+    }
+    if ((("OBSERVATION_PERIODS" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="OBSERVATION_PERIODS", filter:=0]
+  }
+  if ((("PRODUCTS" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="PRODUCTS", filter:=0]
+  }
+    if ((("VACCINES" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="VACCINES", filter:=0]
+    }
+      if ((("PERSON_RELATIONSHIPS" %in% Res.inconsistency[["table_name"]])==TRUE) & (("EUROCAT" %in% tmp[["table_name"]])==TRUE)){
+    Res.inconsistency[table_name=="PERSON_RELATIONSHIPS", filter:=0]
+  }
+
+if (nrow(METADATA[type_of_metadata== "presence_of_table" & tablename=="EUROCAT" & values=="Yes" & other=="EUROmediCAT"])>0){
+  tmp[table_name=="EUROCAT", table_name:="EUROCAT(EUROmediCAT)"]
+}  
+  
+datatable(Res.inconsistency, option=list(scrollX=TRUE, columnDefs = list(list(targets = 5, visible = FALSE))))%>% formatStyle(
+  'table_name', 'filter',
+  color = styleEqual(c(0,1), c('black', 'red'))
+) %>% formatStyle(
+  'table_name', 'filter',
+  color = styleEqual(c(0,1), c('normal', 'bold')))} else {
+  print("All tables mentioned in the METADATA are present in the directory.")
+  }
+```
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Presence of CDM tables  
+
+The following tables are present in the working directory:  
+
+```{r present_tables, echo=FALSE}
+#Output for tables that are present both in the METADATA and working directory
+datatable(Res.comp[[1]], option=list(scrollX=TRUE))
+
+#Save list of present tables as .csv
+write.csv(Res.comp[[1]], paste(m_dir,"list_of_present_tables.csv",sep="") ,row.names = F)
+
+```
+
+
+<br>
+
+</div>
+
+<div class = 'box5'>
+
+## 4. Subpopulations
+
+If subpopulations are presernt in the data those will be displayed below:
+
+```{r echo=FALSE}
+subp<-METADATA[type_of_metadata %!in% c("presence_of_table", "presence_of_column", "list_of_values")]
+
+if (subp[,.N]>0){
+  datatable(subp, options=list(scrollX=TRUE))
+} else {
+  print("There are no subpopulations in the data.")
+}
+```
+
+<br>
+
+</div>
+
+<div class = 'box5'>
+
+## 5. Output folder structure   
+
+METADATA     
+**1.** METADATA.html: Rmarkdown report    
+**2.** `list_of_present_tables.csv`: names of tables present in the working directory    
+**3.** Variables:    
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `non_mandatory_variables.csv`: list of non-mandatory variables for all tables     
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `vocabulary_variables.csv`: list of vocabulary variables for all tables   
+
+<br>
+
+</div>
+
+<div class = 'box6'>
+
+```{r echo=FALSE}
+#Export list of non-mandatory/on_condition variable and vocabulary variables which can be used to fill out the metadata
+#A datatable that contains information about all variables for each CDM table
+non.man_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("visit_end_date", "specialty_of_visit","specialty_of_visit_vocabulary", "status_at_discharge", "status_at_discharge_vocabulary"), 
+        cdm_format = "character"),
+  cbind(table_name="EVENTS", 
+        variable_name=c("end_date_record", "event_code", "text_linked_to_event_code", "event_free_text", "present_on_admission", "laterality_of_event", "visit_occurrence_id"), 
+        cdm_format= "character"),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("medicinal_product_id", "date_dispensing", "date_prescription", "disp_number_medicinal_product", "presc_quantity_per_day", "presc_quantity_unit", "presc_duration_days",  "product_lot_number", "indication_code", 
+"indication_code_vocabulary", "prescriber_specialty","prescriber_specialty_vocabulary", "visit_occurrence_id"),
+cdm_format= c("character", "character","character", "numeric", "numeric", "character", "numeric", rep("character",6))),
+  cbind(table_name="PROCEDURES", 
+        variable_name=c("visit_occurrence_id"), cdm_format= "character"),
+  cbind(table_name="VACCINES", 
+        variable_name=c("vx_record_date", "vx_admin_date", "vx_atc", "vx_type", "medicinal_product_id", "vx_text",  "vx_dose", "vx_manufacturer", "vx_lot_num", "visit_occurrence_id"), cdm_format= "character"),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("mo_code", "mo_record_vocabulary", "mo_source_table", "mo_source_column", "mo_unit", "visit_occurrence_id"), cdm_format= "character"),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name=c("so_unit"), cdm_format= "character"),
+  cbind(table_name="PERSONS", 
+        variable_name=c("day_of_birth", "month_of_birth", "day_of_death", "month_of_death", "race", "country_of_birth", "quality"), cdm_format= "character"),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("medicinal_product_id", "medicinal_product_name", "unit_of_presentation_type", "unit_of_presentation_num", "administration_dose_form", "admonistration_route", "subst1_atc_code", "subst2_atc_code","subst3_atc_code", "subst1_amount_per_form", "subst2_amount_per_form", "subst3_amount_per_form","subst1_amount_unit", "subst2_amount_unit", "subst3_amount_unit", "subst1_concentration", "subst2_concentration", "subst3_concentration", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content", "concentration_total_content_unit", "medicinal_product_manufacturer"), cdm_format=c("character", "character", "character", "numeric", rep("character",5), "numeric", "numeric", "numeric", "character", "character", "character","numeric", "numeric", "numeric", "character", "character", "character", "numeric", "character", "character")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_dictionary_link", "etl_link"), cdm_format="character"),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("date_when_data_last_updated", "since_when_data_complete", "up_to_when_data_complete", "restriction_in_values", "list_of_values", "restriction_condition"), cdm_format = "character"),
+  cbind(table_name="EUROCAT", 
+        variable_name=c("sp_twin", "death_date", "datemo", "bmi", "residmo", "totpreg", "condisc", "firstpre", "sp_firstpre", "karyo", "sp_karyo", "gentest", "sp_gentest", "pm", "presyn", "premal1", "premal2", "premal3", "premal4", "premal5", "premal6", "premal7", "premal8", "omim", "orpha", "assconcept", "occupmo", "illbef1", "illbef2", "matdiab", "hba1c", "illdur1", "illdur2", "folic_g14", "firsttri", "drugs1", "sp_drugs1", "drugs2", "sp_drugs2", "drugs3", "sp_drugs3", "drugs4", "sp_drugs4",
+"drugs5", "sp_drugs5", "extra_drugs", "consang", "sp_consang", "sibanom", "sp_sibanom", "prevsib", "sib1", "sib2", "sib3", "moanom", "sp_moanom", "faanom", "sp_faanom", "matedu", "socm", "socf", "migrant", "genrem", "person_id_child", "person_id_mother", "survey_id"), cdm_format = c(rep("character", 3), "numeric", rep("character", 26), "numeric", rep("character", 35)))
+))
+
+
+#A datatable that contains information about vocabulary variables for each CDM table
+vocabulary_var<-as.data.table(rbind(
+  cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("specialty_of_visit_vocabulary", "status_at_discharge_vocabulary", "meaning_of_visit")),
+  cbind(table_name="EVENTS", 
+        variable_name=c("event_record_vocabulary", "present_on_admission","laterality_of_event", "meaning_of_event")),
+  cbind(table_name="MEDICINES", 
+        variable_name=c("presc_quantity_unit", "indication_code_vocabulary","prescriber_specialty_vocabulary", "meaning_of_drug_record")),
+  cbind(table_name="PROCEDURES", 
+        variable_name=c("procedure_code_vocabulary", "meaning_of_procedure")),
+  cbind(table_name="VACCINES", 
+        variable_name=c("vx_type","meaning_of_vx_record", "vx_dose")),
+  cbind(table_name="MEDICAL_OBSERVATIONS", 
+        variable_name=c("mo_record_vocabulary", "mo_source_table", "mo_unit", "mo_meaning")),
+  cbind(table_name="SURVEY_ID", 
+        variable_name=c("survey_meaning")),
+  cbind(table_name="SURVEY_OBSERVATIONS", 
+        variable_name=c("so_source_table", "so_unit", "so_meaning")),
+  cbind(table_name="PERSONS", 
+        variable_name=c("sex_at_instance_creation", "quality")),
+  cbind(table_name="OBSERVATION_PERIODS", 
+        variable_name=c("op_meaning")),
+   cbind(table_name="PERSON_RELATIONSHIPS", 
+        variable_name=c("meaning_of_relationship", "method_of_linkage")),
+  cbind(table_name="PRODUCTS", 
+        variable_name=c("unit_of_presentation_type", "administration_dose_form","administration_route", "subst1_amiunt_unit","subst2_amount_unit","subst_3_amount_unit", "subst1_concentration_unit", "subst2_concentration_unit", "subst3_concentration_unit", "concentration_total_content_unit")),
+  cbind(table_name="CDM_SOURCE", 
+        variable_name=c("data_access_provider_code", "data_access_provider_name",  "data_source_name", "cdm_vocabulary_version", "cdm_version")),
+  cbind(table_name="INSTANCE", 
+        variable_name=c("source_table_name", "included_in_instance", "restriction_in_values")),
+    cbind(table_name="EUROCAT", 
+        variable_name=c("sex", "nbrbaby", "nbrmalf", "type", "civreg","survival","totpreg", "whendisc", "condisc", "firstpre","karyo", "gentest", "pm", "surgery", "presyn", "premal1", "premal2","premal3", "premal4", "premal5", "premal6","premal7", "premal8", "assconcept", "matdiab","folic_g14", "firsttri", "consang", "sibanom", "prevsib", "moanom", "faanom", "matedu", "socm", "socf", "migrant"))
+  
+))
+
+#Save list  as .csv
+write.csv(non.man_var, paste(m_var,"non_mandatory_variables.csv",sep="") ,row.names = F)
+write.csv(vocabulary_var, paste(m_var,"vocabulary_variables.csv",sep="") ,row.names = F)
+if (subp[,.N]){
+write.csv(subp, paste(m_var,"subpopulations.csv",sep="") ,row.names = F)
+}
+```
+
+</div>
+
+

@@ -1,0 +1,607 @@
+---
+title: 'CONCEPTION - Level 1 checks: Step 4 to 5 (PERSON_RELATIONSHIPS)'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r create_dir, include=FALSE}
+if ("PERSON_RELATIONSHIPS" %in% list.files(output_dir)){
+  pr_dir<-paste(output_dir, "PERSON_RELATIONSHIPS/", sep="")
+  pr_less<-paste(pr_dir, "Masked/", sep="")
+   dir.create(paste(pr_dir,"tmp", sep=""))
+tmp<-paste(pr_dir, "tmp/", sep="")
+} else {
+#Create the PERSON_RELATIONSHIPS folder in the output dir
+dir.create(paste(output_dir, "PERSON_RELATIONSHIPS", sep=""))
+pr_dir<-paste(output_dir, "PERSON_RELATIONSHIPS/", sep="")
+dir.create(paste(pr_dir,"Masked", sep=""))
+pr_less<-paste(pr_dir, "Masked/", sep="")
+   dir.create(paste(pr_dir,"tmp", sep=""))
+tmp<-paste(pr_dir, "tmp/", sep="")
+}
+```
+
+```{css,  echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 15px 10px 15px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+``` {r list_of_variables, echo = FALSE}
+total_var<-as.data.table(cbind(table_name="PERSON_RELATIONSHIPS", 
+        variable_name=c("person_id", "related_id", "origin_of_relationship", "meaning_of_relationship", "method_of_linkage")))
+```
+
+```{r check_directory, include=FALSE}
+#Get all files in the CDM directory that are .csv files
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+
+#List of actual tables that match PERSON_RELATIONSHIPS pattern
+actual_tables<-directory_CDM[grepl(pattern="PERSON_RELATIONSHIPS", x=directory_CDM)]
+
+```
+
+```{r count_functions, include=FALSE}
+####################################################################################
+#Counts by meaning (2 or more categories)
+step4.3<-function(dt, var_name){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  #origin_of_relationship
+  a.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, origin_of_relationship)]
+  setnames(a.1, "origin_of_relationship", "vocabulary")
+  a.1<-cbind(a.1, variable="origin_of_relationship")
+  a.2<-dt[complete.cases(meaning) & complete.cases(origin_of_relationship), .N]
+  a.2<-data.table(variable="origin_of_relationship", total=a.2)
+  
+  #meaning_of_relationship
+  b.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, meaning_of_relationship)]
+  setnames(b.1, "meaning_of_relationship", "vocabulary")
+  b.1<-cbind(b.1, variable="meaning_of_relationship")
+  b.2<-dt[complete.cases(meaning) & complete.cases(meaning_of_relationship), .N]
+  b.2<-data.table(variable="meaning_of_relationship", total=b.2)
+  
+  
+  #method_of_linkage
+  c.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, method_of_linkage)]
+  setnames(c.1, "method_of_linkage", "vocabulary")
+  c.1<-cbind(c.1, variable="method_of_linkage")
+  c.2<-dt[complete.cases(meaning) & complete.cases(method_of_linkage), .N]
+  c.2<-data.table(variable="method_of_linkage", total=c.2)
+
+  
+  count<-rbind(a.1,b.1,c.1)
+  total<-rbind(a.2,b.2,c.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+
+```
+
+```{r combine_results_functions, include=FALSE}
+#Combine results when counts only by meaning
+combine_counts1.m<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, meaning, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "count"))
+  
+  b<-totals_dt[, lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+return(results)
+}
+
+
+combine_counts2.m<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, meaning, vocabulary, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:3) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  setnames(a.2, "combination3", "vocabulary")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "vocabulary", "count"))
+  
+  b<-totals_dt[,lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+
+}
+
+```
+
+```{r step4_5_check, include=FALSE}
+step_4_5_check<- function(tables_list){
+
+  Res.4.3<-list()
+  Res.p.t<-list() #total number of persons with recorded meaning
+  Res.r.t<-list() #total number of visits with recorded meaning
+  w<-1
+  suppressPackageStartupMessages(library(data.table))
+  
+  for (i in 1:length(tables_list)){
+    df<- fread(paste(path_dir, tables_list[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+    df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+    
+    #Create a combination variable by combining all columns, keep only that variable
+    cols<-colnames(df)
+    dup<-df[, combination := Reduce(function(...) paste(..., sep = "_^_"), .SD[, mget(cols)])][,"combination"]
+    
+    write.csv(dup, paste(tmp,"dup_", tables_list[i],sep="") ,row.names = F)
+    rm(dup)
+    
+    Res.4.3[[w]]<-step4.3(dt=df, var_name = "meaning_of_relationship")
+    Res.p<-df[!duplicated(person_id), c("person_id", "meaning_of_relationship")][!is.na(person_id)][!is.na(meaning_of_relationship)]
+     write.csv(Res.p, paste(tmp,"persons_", tables_list[i],sep="") ,row.names = F)
+    rm(Res.p)
+    
+    Res.r<-df[!duplicated(related_id), c("related_id", "meaning_of_relationship")][!is.na(related_id)][!is.na(meaning_of_relationship)]
+    if (Res.r[,.N]>0){
+      write.csv(Res.r, paste(tmp,"related_", tables_list[i],sep="") ,row.names = F)
+    rm(Res.r)
+    }
+    
+    Res.p.t[[w]]<-df[!is.na(meaning_of_relationship) & !is.na(person_id), .N]
+    Res.r.t[[w]]<-df[!is.na(meaning_of_relationship) & !is.na(related_id), .N]
+    w<-w+1
+    rm(df)
+  }
+
+   #save results for duplicates
+  dup_files<-list.files(tmp, pattern="^dup")
+  if (length(dup_files)>1){
+  dup<-fread(paste0(tmp,dup_files[1]), sep=";")
+  i<-2
+  for (i in 2:length(dup_files)){
+    dup<-rbind(dup,fread(paste0(tmp,dup_files[i]), sep=";"))
+    dup<-dup[duplicated(combination)]
+  }
+  dup<-dup[,.N]
+  } else {
+    dup<-fread(paste0(tmp,dup_files), sep=";")
+    dup<-dup[duplicated(combination)]
+    dup<-dup[,.N]
+  }
+  rm(dup_files)
+  
+   #Results for person_id
+   #Results for person_id
+  #load all person id files
+  persons_files<-list.files(tmp, pattern="^persons", full.names = T)
+  #get size of each file
+  size_persons<-lapply(persons_files, function(x) file.size(x))
+  size_persons<-do.call(rbind,size_persons)
+  size_persons<-data.table(file=persons_files, size_persons)
+  setnames(size_persons, names(size_persons)[2], "size")
+  size_persons[,size:=as.numeric(size)]
+  #order files by size
+  size_persons<-size_persons[order(size)]
+  #get number of persons files
+  length_persons_files<-size_persons[,.N]
+
+  #stratified by meaning
+  if (length(persons_files)>1){
+  Res.p.c<-fread(size_persons[length_persons_files,file])
+  Res.p.c[, comb:=paste(person_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+  for (i in 1:(length_persons_files-1)){
+    a<-fread(size_persons[i,file])
+    a<-a[, comb:=paste(person_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+    Res.p.c<-rbind(Res.p.c,a)
+    Res.p.c<-Res.p.c[!duplicated(comb)]
+    rm(a)
+  }
+  Res.p.c[,comb:=NULL]
+    Res.p.c<-data.table(variable_name="person_id",Res.p.c[!is.na(meaning_of_relationship), .(count=.N), by="meaning_of_relationship"])
+     names(Res.p.c)<-c("variable_name", "meaning", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+   
+  
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by meaning
+  rm(Res.p.c, Res.p.t)
+  
+  } 
+  
+  if(length(persons_files)==1){
+  Res.p.c<-fread(persons_files)
+  Res.p.c[, comb:=paste(person_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+  Res.p.c[,comb:=NULL]
+  
+  Res.p.c<-data.table(variable_name="person_id",Res.p.c[!is.na(meaning_of_relationship), .(count=.N), by="meaning_of_relationship"])
+     names(Res.p.c)<-c("variable_name", "meaning", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+   
+  
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by meaning
+  rm(Res.p.c, Res.p.t)
+  
+}
+  #related_id  
+  
+  related_files<-list.files(tmp, pattern="^related", full.names = T)
+  if (length(related_files)>0){
+  size_related<-lapply(related_files, function(x) file.size(x))
+  size_related<-do.call(rbind,size_related)
+  size_related<-data.table(file=related_files, size_related)
+  setnames(size_related, names(size_related)[2], "size")
+  size_related[,size:=as.numeric(size)]
+  #order files by size
+  size_related<-size_related[order(size)]
+  #get number of persons files
+  length_related_files<-size_related[,.N]
+}
+
+  #stratified by meaning
+  if(length(related_files)>1){
+  Res.r.c<-fread(size_related[length_related_files,file])
+  Res.r.c[, comb:=paste(related_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+  for (i in 1:(length_related_files-1)){
+    a<-fread(size_related[i,file])
+    a<-a[, comb:=paste(related_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+    Res.r.c<-rbind(Res.r.c,a)
+    Res.r.c<-Res.r.c[!duplicated(comb)]
+    rm(a)
+  }
+  Res.r.c[,comb:=NULL]
+    Res.r.c<-data.table(variable_name="related_id",Res.r.c[!is.na(meaning_of_relationship), .(count=.N), by="meaning_of_relationship"])
+     names(Res.r.c)<-c("variable_name", "meaning", "count")
+  Res.r.t<-do.call(rbind, Res.r.t)
+  Res.r.t<-sum(Res.r.t)
+    
+  Res.r<-data.table(Res.r.c, total=Res.r.t) #results stratified by meaning
+  rm(Res.r.c, Res.r.t)
+      }
+  
+if (length(related_files)==1) {
+  Res.r.c<-fread(related_files)
+  Res.r.c[, comb:=paste(related_id, meaning_of_relationship, sep="_^_")][!duplicated(comb)]
+Res.r.c[,comb:=NULL]
+    Res.r.c<-data.table(variable_name="related_id",Res.r.c[!is.na(meaning_of_relationship), .(count=.N), by="meaning_of_relationship"])
+     names(Res.r.c)<-c("variable_name", "meaning", "count")
+  Res.r.t<-do.call(rbind, Res.r.t)
+  Res.r.t<-sum(Res.r.t)
+  
+ 
+  Res.r<-data.table(Res.r.c, total=Res.r.t) #results stratified by meaning
+  rm(Res.r.c, Res.r.t)
+      }  
+  
+if(length(related_files)==0){
+  Res.r<-NULL
+}
+ 
+#Counts stratified by meaning(other variables)
+  if(length(related_files)>0){
+  Res.4.1<-rbind(Res.p, Res.r)
+  rm(Res.p, Res.r)
+  } else {
+    Res.4.1<-Res.p
+  rm(Res.p)
+  }
+ 
+
+  i<-1
+  #Combine counts by meaning(2 or more categories)
+ Res.4.3.c<-vector(mode="list", length=length(Res.4.3))
+  Res.4.3.t<-vector(mode="list", length=length(Res.4.3))
+  for (i in 1:length(Res.4.3)){
+    Res.4.3.c[[i]]<-do.call(rbind, Res.4.3[[i]][1])
+     Res.4.3.t[[i]]<-do.call(rbind, Res.4.3[[i]][2])
+  }
+  Res.4.3.c<-do.call(rbind, Res.4.3.c)
+ Res.4.3.t<-do.call(rbind, Res.4.3.t)
+ Res.4.3<-combine_counts2.m(Res.4.3.c, Res.4.3.t)
+
+  output<-list("COUNT1_M"=Res.4.1, "COUNT2_M"=Res.4.3[vocabulary !="NA"])
+  return(output)
+}
+
+```
+
+```{r run_script, echo=FALSE, warning=FALSE}
+Results.pr<-step_4_5_check(actual_tables)
+```
+
+
+```{r include=FALSE}
+ unlink(paste0(pr_dir, "tmp"), recursive = T)
+```
+
+```{r include=FALSE}
+rm(combine_counts1.m, combine_counts2.m, step_4_5_check, step4.3)
+```
+
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions:  
+**1.** The PERSON_RELATIONSHIPS table does not contain any conventions that can be checked by the script.   
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+## 1. Convention check
+
+Check if conventions are satisfied.
+
+The PERSON_RELATIONSHIPS table does not contain any conventions that can be checked by the script.
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+
+## 2. Counts of categorical variables
+
+<br>
+
+Counts will be divided based on the number of categories:     
+ 
+2 or more categories:     
+**a.** origin_of_relationship  
+**b** meaning_of_relationship   
+**c.** method_of_linkage    
+
+
+Other variables:  
+**a.** person_id  
+**b** related_id    
+
+ 
+<br>
+
+#### **Counts stratified by meaning (2 or more categories)** 
+
+```{r count2_m, echo=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count2.m<-data.table(table_name="PERSON_RELATIONSHIPS", Results.pr$COUNT2_M)
+setnames(Res.count2.m, "variable", "variable_name")
+#Remove empty vocabulary values
+Res.count2.m<-Res.count2.m[!(is.na(vocabulary))]
+Res.count2.m<-Res.count2.m[vocabulary!=""]
+Res.count2.m<-Res.count2.m[!(is.na(meaning))]
+Res.count2.m<-Res.count2.m[meaning!=""]
+if (nrow(Res.count2.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count2.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category."))
+}
+#Remove rows where both count and total are zero
+Res.count2.m<-Res.count2.m[(count !=0 & total !=0)]
+#Calculate percentage
+Res.count2.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 6 level
+Res.count2.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count2.m, paste(pr_dir,"person_relationships_meaning_2categories.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count2.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count2.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count2.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"] #replace total as well if lower than 5
+
+#Put <5 counts in another dataset for graphs
+Res.count2.m.1<-Res.count2.m[count != "<5"]
+Res.count2.m.1[, count:= as.numeric(count)]
+Res.count2.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count2.m[,.N] != 0){
+datatable(Res.count2.m, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+}
+
+#Save results as .csv file
+write.csv(Res.count2.m, paste(pr_less,"person_relationships_meaning_2categories_masked.csv",sep="") ,row.names = F)
+```
+
+
+```{r graph_count2_m, echo=FALSE, warning=FALSE}
+if (Res.count2.m.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+fig2.m<-vector(mode="list", length=length(unique(Res.count2.m.1[["variable_name"]])))
+for(i in 1:length(unique(Res.count2.m.1[["variable_name"]]))){
+  fig2.m[[i]]<-ggplotly(ggplot(Res.count2.m.1[variable_name==unique(Res.count2.m.1[["variable_name"]])[i]],
+                               aes(x = meaning, y = percentage, fill=vocabulary)) +
+                               geom_bar(position="dodge", stat="identity") +
+                              theme_classic() +
+                               ggtitle(unique(Res.count2.m.1[["variable_name"]])[i]) + 
+                               xlab("Meaning") +
+                               ylab("Percentage")+
+                          ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+}
+
+```
+
+
+```{r display_graph_count2_m, echo=FALSE}
+if (Res.count2.m.1[,.N] != 0){
+htmltools::tagList(list(fig2.m))
+}
+```
+
+<br>
+
+
+#### **Counts stratified by meaning (other variables)**  
+
+
+```{r count1_m, echo=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count1.m<-data.table(table_name="PERSON_RELATIONSHIPS", Results.pr$COUNT1_M)
+Res.count1.m<-Res.count1.m[(!(is.na(meaning)))]
+Res.count1.m<-Res.count1.m[meaning != ""]
+if (nrow(Res.count1.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are) ", nrow(Res.count1.m[(count ==0 & total ==0)]), " row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category."))
+}
+#Remove rows where both count and total are zero
+Res.count1.m<-Res.count1.m[(count !=0 & total !=0)]
+Res.count1.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count1.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(pr_dir,"person_relationships_meaning_other.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count1.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count1.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+Res.count1.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+
+#Put <5 counts in another dataset for graphs
+Res.count1.m.1<-Res.count1.m[count != "<5"]
+Res.count1.m.1[, count:= as.numeric(count)]
+Res.count1.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count1.m[,.N] != 0){
+datatable(Res.count1.m,  option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+}
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(pr_less,"person_relationships_meaning_other_masked.csv",sep="") ,row.names = F)
+```
+
+```{r graph_count1_m, echo=FALSE, warning=FALSE}
+if (Res.count1.m.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+ggplotly(ggplot(Res.count1.m.1, aes(x = meaning, y = percentage)) +
+                               geom_linerange(
+                                 aes(x=meaning, ymin=0, ymax=percentage, group= variable_name),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.6)) + 
+                              geom_point(
+                                aes(color=variable_name),
+                                position=position_dodge(0.6), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Counts stratified by meaning") + 
+                               xlab("Meaning") +
+                               ylab("Percentage")+
+           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Distribution of continous variables and counts of date variables
+
+<br> 
+
+#### **Distribution of continous variables**
+
+The PERSON_RELATIONSHIPS table does not contain continous variables.
+<br>
+
+#### **Counts of dates variables**
+
+The PERSON_RELATIONSHIPS table does not contain date variables.
+
+<br>
+
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 4. Calculations
+
+<br> 
+
+In this section is explained how each count is being calculated.  
+Numerator= count  
+Denominator= total   
+
+```{r calculations_table, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+calculations_pr<-data.table(rbind(
+  cbind(calculation= "Counts stratified by meaning(other variables)", variable_name=c("person_id", "related_id"), numerator=c("Number of unique persons", "Number of unique related id"), denominator=c("Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning")),
+      cbind(calculation= "Counts stratified by meaning(2 or more categories)", variable_name=c("origin_of_relationship", "meaning_of_relationship", "method_of_linkage"), numerator=c("Number of complete observations per category", "Number of complete observations per category", "Number of complete observations per category"), denominator=c("Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning"))
+))
+datatable(calculations_pr)
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 5. Output folder structure   
+
+PERSON_RELATIONSHIPS     
+**1.** PERSON_RELATIONSHIPS.html: Rmarkdown report      
+**2.** `person_relationships_meaning_2categories.csv`: counts of variables with 2 or more categories stratified by meaning      
+**3.** `person_relationships_meaning_other.csv`: counts of other variables stratified by meaning          
+**4.** Masked:      
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `person_relationships_meaning_2categories_masked.csv`: counts of variables with 2 or more categories stratified by meaning where counts smaller than 5 are masked          
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `person_relationships_meaning_other_masked.csv`: counts of other variables stratified by meaning where counts smaller than 5 are masked       
+variables stratified by meaning and year where counts smaller than 5 are masked    
+
+</div>
+

@@ -1,0 +1,1486 @@
+---
+title: 'CONCEPTION - Level 1 checks: Step 4 to 5 (VISIT_OCCURRENCE)'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r include=FALSE}
+if ("VISIT_OCCURRENCE" %in% list.files(output_dir)){
+  visits_dir<-paste(output_dir, "VISIT_OCCURRENCE/", sep="")
+  visits_less<-paste(visits_dir, "Masked/", sep="")
+   dir.create(paste(visits_dir,"tmp", sep=""))
+tmp<-paste(visits_dir, "tmp/", sep="")
+} else {
+#Create the VISIT_OCCURRENCE folder in the output dir
+dir.create(paste(output_dir, "VISIT_OCCURRENCE", sep=""))
+  visits_dir<-paste(output_dir, "VISIT_OCCURRENCE/", sep="")
+  dir.create(paste(visits_dir,"Masked", sep=""))
+visits_less<-paste(visits_dir, "Masked/", sep="")
+   dir.create(paste(visits_dir,"tmp", sep=""))
+tmp<-paste(visits_dir, "tmp/", sep="")
+}
+```
+
+```{css, echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 15px 10px 15px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+``` {r list_of_variables, echo = FALSE}
+total_var<-as.data.table(cbind(table_name="VISIT_OCCURRENCE", 
+        variable_name=c("person_id", "visit_occurrence_id", "visit_start_date","visit_end_date", 
+                        "speciality_of_visit", "speciality_of_visit_vocabulary","status_at_discharge",
+                        "status_at_discharge_vocabulary", "meaning_of_visit", "origin_of_visit")))
+```
+
+```{r check_directory, include=FALSE}
+#Get all files in the CDM directory that are .csv files
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+
+#List of actual tables that match VISIT_OCCURRENCE pattern
+actual_tables<-directory_CDM[grepl(pattern="VISIT_OCCURRENCE", x=directory_CDM)]
+```
+
+```{r convention_check, include=FALSE}
+#Check conventions
+convention_check_visit<-function(visits_list){
+ if (length(visits_list)>1){
+  Res.v<-fread(paste0(tmp,visits_list[1]))
+i<-2
+  for (i in 2:length(visits_list)){
+    a<-fread(paste0(tmp,visits_list[i]))
+    Res.v<-rbind(Res.v,a)
+    rm(a)
+  }
+Res.v<-Res.v[duplicated(visit_occurrence_id),.N]
+  } 
+  
+    if (length(visits_list)==1){
+  Res.v<-fread(paste0(tmp,visits_list))
+  Res.v<-Res.v[duplicated(visit_occurrence_id),.N]
+    } 
+  
+  con.1<-Res.v
+  rm(Res.v)
+  
+  if (con.1 >0){
+    error<-TRUE
+    comment<-paste("Convention 1 is not satisfied.There is(are)", con.1, 
+                   "duplicated visit occurrence id(s) in the table VISIT_OCCURRENCE.")
+  } else {
+    error<-FALSE
+    comment<-"Convention 1 is satisfied."
+  }
+  
+  result<-data.table(error=error, comment=comment)
+  return(result)
+}
+
+
+```
+
+```{r count_functions, include=FALSE}
+#Counts by meaning(other variables)
+step4.1<-function(dt, var_name){
+    dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  #speciality_of_visit
+  c.1<-dt[complete.cases(meaning),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("speciality_of_visit"), by=.(meaning)] 
+  c.1<-data.table::melt(c.1, id.vars=c("meaning"), measure.vars=colnames(c.1)[-1]) #from wide to long  
+  setnames(c.1, "value", "count")
+  c.2<-dt[complete.cases(meaning) & complete.cases(speciality_of_visit), .N]
+  c.2<-data.table(variable="speciality_of_visit", total=c.2)
+  
+  #status_at_discharge
+  d.1<-dt[complete.cases(meaning),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("status_at_discharge"), by=.(meaning)] 
+  d.1<-data.table::melt(d.1, id.vars=c("meaning"), measure.vars=colnames(d.1)[-1]) #from wide to long  
+  setnames(d.1, "value", "count")
+  d.2<-dt[complete.cases(meaning) & complete.cases(status_at_discharge), .N]
+  d.2<-data.table(variable="status_at_discharge", total=d.2)
+
+  
+count<-rbind(c.1,d.1)
+total<-rbind(c.2,d.2)
+results<-list("count"=count, "total"=total)
+  return(results)
+}
+
+#################################################################
+#Counts by meaning and year (other variables)
+step4.2<-function(dt, var_name){
+    dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  #speciality_of_visit
+  c.1<-dt[complete.cases(meaning) & complete.cases(year),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("speciality_of_visit"), by=.(meaning, year)] 
+  c.1<-data.table::melt(c.1, id.vars=c("meaning", "year"), measure.vars=colnames(c.1)[-c(1:2)]) #from wide to long  
+  setnames(c.1, "value", "count")
+  c.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(speciality_of_visit), .N, by=.(year)]
+  setnames(c.2, "N", "total")
+  c.2<-data.table(variable="speciality_of_visit", c.2)
+
+  #status_at_discharge
+  d.1<-dt[complete.cases(meaning) & complete.cases(year),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("status_at_discharge"), by=.(meaning, year)] 
+  d.1<-data.table::melt(d.1, id.vars=c("meaning", "year"), measure.vars=colnames(d.1)[-c(1:2)]) #from wide to long  
+  setnames(d.1, "value", "count")
+  d.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(status_at_discharge), .N, by=.(year)]
+  setnames(d.2, "N", "total")
+  d.2<-data.table(variable="status_at_discharge", d.2)
+
+
+  count<-rbind(c.1,d.1)
+  total<-rbind(c.2,d.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+
+####################################################################################
+#Counts by meaning (2 or more categories)
+step4.3<-function(dt, var_name){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  #speciality_of_visit_vocabulary
+  a.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, speciality_of_visit_vocabulary)]
+  setnames(a.1, "speciality_of_visit_vocabulary", "vocabulary")
+  a.1<-cbind(a.1, variable="speciality_of_visit_vocabulary")
+  a.2<-dt[complete.cases(meaning) & complete.cases(speciality_of_visit_vocabulary), .N]
+  a.2<-data.table(variable="speciality_of_visit_vocabulary", total=a.2)
+
+  #status_at_discharge_vocabulary
+  b.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, status_at_discharge_vocabulary)]
+  setnames(b.1, "status_at_discharge_vocabulary", "vocabulary")
+  b.1<-cbind(b.1, variable="status_at_discharge_vocabulary")
+  b.2<-dt[complete.cases(meaning) & complete.cases(status_at_discharge_vocabulary), .N]
+  b.2<-data.table(variable="status_at_discharge_vocabulary", total=b.2)
+
+  #meaning_of_visit
+  c.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, meaning_of_visit)]
+  setnames(c.1, "meaning_of_visit", "vocabulary")
+  c.1<-cbind(c.1, variable="meaning_of_visit")
+  c.2<-dt[complete.cases(meaning) & complete.cases(meaning_of_visit), .N]
+  c.2<-data.table(variable="meaning_of_visit", total=c.2)
+  
+  
+  #origin_of_visit
+  d.1<-dt[complete.cases(meaning), .(count=.N), by=.(meaning, origin_of_visit)]
+  setnames(d.1, "origin_of_visit", "vocabulary")
+  d.1<-cbind(d.1, variable="origin_of_visit")
+  d.2<-dt[complete.cases(meaning) & complete.cases(origin_of_visit), .N]
+  d.2<-data.table(variable="origin_of_visit", total=d.2)
+  
+  count<-rbind(a.1,b.1,c.1,d.1)
+  total<-rbind(a.2,b.2,c.2,d.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+################################################################################
+#Count by meaning and year (2 or more categories)
+step4.4<-function(dt, var_name){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  #speciality_of_visit_vocabulary
+  a.1<-dt[complete.cases(meaning) & complete.cases(year), .(count=.N), by=.(meaning, year, speciality_of_visit_vocabulary)]
+  setnames(a.1, "speciality_of_visit_vocabulary", "vocabulary")
+  a.1<-cbind(a.1, variable="speciality_of_visit_vocabulary")
+  a.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(speciality_of_visit_vocabulary), .N, by=.(year)]
+  setnames(a.2, "N", "total")
+a.2<-data.table(variable="speciality_of_visit_vocabulary", a.2)
+  
+  #status_at_discharge_vocabulary
+  b.1<-dt[complete.cases(meaning) & complete.cases(year), .(count=.N), by=.(meaning, year, status_at_discharge_vocabulary)]
+  setnames(b.1, "status_at_discharge_vocabulary", "vocabulary")
+  b.1<-cbind(b.1, variable="status_at_discharge_vocabulary")
+  b.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(status_at_discharge_vocabulary), .N, by=.(year)]
+  setnames(b.2, "N", "total")
+  b.2<-data.table(variable="status_at_discharge_vocabulary", b.2)
+  
+  #meaning_of_visit
+  c.1<-dt[complete.cases(meaning) & complete.cases(year), .(count=.N), by=.(meaning, year, meaning_of_visit)]
+  setnames(c.1, "meaning_of_visit", "vocabulary")
+  c.1<-cbind(c.1, variable="meaning_of_visit")
+  c.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(meaning_of_visit), .N, by=.(year)]
+  setnames(c.2, "N", "total")
+  c.2<-data.table(variable="meaning_of_visit", c.2)
+  
+  #origin_of_visit
+  d.1<-dt[complete.cases(meaning) & complete.cases(year), .(count=.N), by=.(meaning, year, origin_of_visit)]
+  setnames(d.1, "origin_of_visit", "vocabulary")
+  d.1<-cbind(d.1, variable="origin_of_visit")
+  d.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(origin_of_visit), .N, by=.(year)]
+  setnames(d.2, "N", "total")
+  d.2<-data.table(variable="origin_of_visit", d.2)
+
+  count<-rbind(a.1,b.1,c.1,d.1)
+  total<-rbind(a.2,b.2,c.2,d.2)
+  results<-list("count"=count, "total"=total)
+  return(results)
+}
+
+```
+
+```{r date_count_functions, include=FALSE}
+#Date counts by meaning
+dates_count.m<-function(dt, var_name, date_var1, date_var2){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  if (!(is.null(date_var2))){
+  a.1<-dt[complete.cases(meaning), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1, date_var2), by= .(meaning)]
+  a.1<-data.table::melt(a.1, id.vars=c("meaning"), measure.vars=colnames(a.1)[-1])
+  setnames(a.1, "value", "count")
+  a.2.0<-dt[complete.cases(meaning) & complete.cases(date_var1), .N]
+  a.2.0<-data.table(variable=date_var1, total=a.2.0)
+  a.2.1<-dt[complete.cases(meaning) & complete.cases(date_var2), .N]
+  a.2.1<-data.table(variable=date_var2, total=a.2.1)
+  a.2<-rbind(a.2.0, a.2.1)
+
+  results<-list("count"=a.1, "total"=a.2)
+  return(results)
+ 
+  } else {
+    a.1<-dt[complete.cases(meaning), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1), by= .(meaning)]
+    a.1<-data.table::melt(a.1, id.vars=c("meaning"), measure.vars=colnames(a.1)[-1])
+    setnames(a.1, "value", "count")
+    a.2<-dt[complete.cases(meaning) & complete.cases(date_var1), .N]
+   a.2<-data.table("variable"=date_var1, total=a.2)
+   
+   results<-list("count"=a.1, "total"=a.2)
+   return(results)
+  }
+}
+
+
+#Date counts by meaning and year
+dates_count.my<-function(dt, var_name, date_var1, date_var2){
+  dt[, meaning:= dt[[var_name]]]#Duplicate the meaning variable
+  
+  #Check if the second argument is present
+  if( !(is.null(date_var2))){
+ 
+#Check if date_var1 is completely empty 
+if (dt[is.na(dt[[date_var1]]), .N]==dt[,.N]){
+#Check if date_var2 is completely empty
+  if (dt[is.na(dt[[date_var2]]), .N]==dt[,.N]){
+    print("This check can not be performed since both date variables are completely empty.")
+  } else {
+    #Create year variable based on date_var2 since date_var1 is completely empty.
+    dt[,year:=substr(get(date_var2), 1, 4)] 
+    
+    #Continue with count function
+    a.1<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1, date_var2), by= .(meaning, year)]
+  a.1<-data.table::melt(a.1, id.vars=c("meaning", "year"), measure.vars=colnames(a.1)[-c(1:2)])
+  setnames(a.1, "value", "count")
+  a.2.0<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(date_var1), .N, by=.(year)]
+  a.2.0<-data.table(variable=date_var1, a.2.0)
+  a.2.1<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(date_var2), .N, by=.(year)]
+  a.2.1<-data.table(variable=date_var2, a.2.1)
+  a.2<-rbind(a.2.0, a.2.1)
+  setnames(a.2, "N", "total")
+  a.2[variable==date_var1, ("total"):=0]
+  
+  results<-list("count"=a.1, "total"=a.2)
+  return(results)
+  }
+} else {
+#Check if date_var2 is completely empty
+  if (dt[is.na(dt[[date_var2]]), .N]==dt[,.N]){
+   #Create year variable based on date_var1 since date_var2 is completely empty.
+    dt[,year:=substr(get(date_var1), 1, 4)]
+    
+    #Continue with count function
+    a.1<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1, date_var2), by= .(meaning, year)]
+  a.1<-data.table::melt(a.1, id.vars=c("meaning", "year"), measure.vars=colnames(a.1)[-c(1:2)])
+  setnames(a.1, "value", "count")
+  a.2.0<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(date_var1), .N, by=.(year)]
+  a.2.0<-data.table(variable=date_var1, a.2.0)
+  a.2.1<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(date_var2), .N, by=.(year)]
+  a.2.1<-data.table(variable=date_var2, a.2.1)
+  a.2<-rbind(a.2.0, a.2.1)
+  setnames(a.2, "N", "total")
+  a.2[variable==date_var2, ("total"):=0]
+  
+  results<-list("count"=a.1, "total"=a.2)
+  return(results)
+  } else {
+  #There will be two year variables created one for date_var1 and one for date_var2
+    dt[,year1:=substr(get(date_var1), 1, 4)]
+    dt[,year2:=substr(get(date_var2), 1, 4)]
+    
+  a.1.1<-dt[complete.cases(meaning) & complete.cases(year1), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1), by= .(meaning, year1)]
+  a.1.1<-data.table::melt(a.1.1, id.vars=c("meaning", "year1"), measure.vars=colnames(a.1.1)[-c(1:2)])
+  setnames(a.1.1, "value", "count")
+  setnames(a.1.1, "year1", "year")
+  
+  a.1.2<-dt[complete.cases(meaning) & complete.cases(year2), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var2), by= .(meaning, year2)]
+  a.1.2<-data.table::melt(a.1.2, id.vars=c("meaning", "year2"), measure.vars=colnames(a.1.2)[-c(1:2)])
+  setnames(a.1.2, "value", "count")
+  setnames(a.1.2, "year2", "year")
+  
+  a.1<-rbind(a.1.1, a.1.2)
+  
+  a.2.0<-dt[complete.cases(meaning) & complete.cases(year1), .N, by=.(year1)]
+  setnames(a.2.0, "year1", "year")
+  a.2.0<-data.table(variable=date_var1, a.2.0)
+  a.2.1<-dt[complete.cases(meaning) & complete.cases(year2), .N, by=.(year2)]
+  setnames(a.2.1, "year2", "year")
+  a.2.1<-data.table(variable=date_var2, a.2.1)
+  a.2<-rbind(a.2.0, a.2.1)
+  setnames(a.2, "N", "total")
+  
+  results<-list("count"=a.1, "total"=a.2)
+    return(results)
+  }
+}
+  } else {
+    
+    #Create year variable based on date_var1 since only one date is provided
+    dt[, year:= lubridate::year(dt[[date_var1]])]
+    
+    a.1<-dt[complete.cases(meaning) & complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c(date_var1), by= .(meaning, year)]
+    a.1<-data.table::melt(a.1, id.vars=c("meaning", "year"), measure.vars=colnames(a.1)[-c(1:2)])
+    setnames(a.1, "value", "count")
+    a.2<-dt[complete.cases(meaning) & complete.cases(year) & complete.cases(date_var1), .N, by=.(year)]
+    setnames(a.2, "N", "total")
+    a.2<-data.table(variable=date_var1, a.2)
+    
+    results<-list("count"=a.1, "total"=a.2)
+    return(results)
+  }
+}
+
+```
+
+```{r combine_results_functions, include=FALSE}
+#Combine results when counts only by meaning
+combine_counts1.m<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, meaning, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "count"))
+  
+  b<-totals_dt[, lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+return(results)
+}
+
+#Combine results when counts only by meaning and year
+combine_counts1.my<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, meaning, year, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:3) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  setnames(a.2, "combination3", "year")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "year", "count"))
+  
+  
+  b<-totals_dt[,combination:= paste(variable, year, sep=":")]
+  b.1<-b[,.(total, combination)]
+  b.2<-b.1[, lapply(.SD, sum), by=.(combination)]
+  b.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(b.2, "combination1", "variable")
+  setnames(b.2, "combination2", "year")
+  b.2[, combination:=NULL]
+  
+  setkey(a.2, variable, year)
+  setkey(b.2, variable, year)
+  results<-merge.data.table(a.2, b.2, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+setcolorder(results, c("variable", "meaning", "year", "count", "total"))
+  return(results)
+}
+
+combine_counts2.m<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, meaning, vocabulary, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:3) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  setnames(a.2, "combination3", "vocabulary")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "vocabulary", "count"))
+  
+  b<-totals_dt[,lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+
+}
+
+
+#Combine results when counts only by meaning and year and with 2 or more categories
+combine_counts2.my<-function(counts_dt, totals_dt){
+  
+  a<-counts_dt[,combination:= paste(variable, meaning, vocabulary, year, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:4) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "meaning")
+  setnames(a.2, "combination3", "vocabulary")
+  setnames(a.2, "combination4", "year")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "meaning", "vocabulary", "year", "count"))
+  
+  
+  b<-totals_dt[,combination:= paste(variable, year, sep=":")]
+  b.1<-b[,.(total, combination)]
+  b.2<-b.1[, lapply(.SD, sum), by=.(combination)]
+  b.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(b.2, "combination1", "variable")
+  setnames(b.2, "combination2", "year")
+  b.2[, combination:=NULL]
+
+  setkey(a.2, variable, year)
+  results<-merge.data.table(a.2, b.2, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  setcolorder(results, c("variable", "meaning", "vocabulary", "year", "count", "total"))
+  return(results)
+  
+}
+```
+
+```{r step4_5_check, include=FALSE}
+step_4_5_check<- function(tables_list){
+  Res.4.1<-list() #Counts by meaning(other variables)
+  Res.4.2<-list() #Counts by meaning and year (other variables)
+  Res.4.3<-list() #Counts by meaning (2 or more categories)
+  Res.4.4<-list() #Count by meaning and year (2 or more categories)
+  Res.dates.m<-list() #Date counts by meaning
+  Res.dates.my<-list() #Date counts by meaning and year
+  Res.p.t<-list() #total number of persons with recorded meaning
+  Res.v.t<-list() #total number of visits with recorded meaning
+  Res.p.t.y<-list() #total number of persons with recorded meaning and year
+  Res.v.t.y<-list() #total number of visits with recorded meaning and yea
+  w<-1
+  for (i in 1:length(tables_list)){
+   
+    #load table
+    df<- fread(paste(path_dir, tables_list[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+    df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))] #replace empty spaces with NA
+    
+    df[,year:=substr(visit_start_date, 1, 4)]
+    
+    #Create a combination variable by combining all columns, keep only that variable
+    cols<-colnames(df)
+    dup<-df[, combination := Reduce(function(...) paste(..., sep = "_^_"), .SD[, mget(cols)])][,"combination"]
+    
+    write.csv(dup, paste(tmp,"dup_", tables_list[i],sep="") ,row.names = F)
+    rm(dup)
+
+    #Save counts 
+    Res.4.1[[w]]<-step4.1(dt=df, var_name = "meaning_of_visit")
+    Res.4.2[[w]]<-step4.2(dt=df, var_name = "meaning_of_visit")
+    Res.4.3[[w]]<-step4.3(dt=df, var_name = "meaning_of_visit")
+    Res.4.4[[w]]<-step4.4(dt=df, var_name = "meaning_of_visit")
+    
+    Res.p<-df[!duplicated(person_id), c("person_id", "year", "meaning_of_visit")][!is.na(person_id)][!is.na(meaning_of_visit)]
+    write.csv(Res.p, paste(tmp,"persons_", tables_list[i],sep="") ,row.names = F)
+    rm(Res.p)
+    Res.v<-df[, c("visit_occurrence_id", "year", "meaning_of_visit")][!is.na(visit_occurrence_id)] #will be used to check conventions as well as unique counts of visits
+    write.csv(Res.v, paste(tmp,"visits_", tables_list[i],sep="") ,row.names = F)
+    rm(Res.v)
+    
+    Res.dates.m[[w]]<-dates_count.m(dt=df, var_name = "meaning_of_visit", date_var1 = "visit_start_date", date_var2 = "visit_end_date")
+    Res.dates.my[[w]]<-dates_count.my(dt=df, var_name = "meaning_of_visit", date_var1 = "visit_start_date", date_var2 = "visit_end_date")
+
+    Res.p.t[[w]]<-df[!is.na(meaning_of_visit) & !is.na(person_id), .N]
+    Res.p.t.y[[w]]<-df[!is.na(meaning_of_visit) & !is.na(person_id),.(total=.N), by="year"][!is.na(year)]
+    Res.v.t[[w]]<-df[!is.na(meaning_of_visit) & !is.na(visit_occurrence_id), .N]
+    Res.v.t.y[[w]]<-df[!is.na(meaning_of_visit) & !is.na(visit_occurrence_id),.(total=.N), by="year"][!is.na(year)]
+    w<-w+1
+    rm(df)
+  }
+  
+   #save results for duplicates
+  dup_files<-list.files(tmp, pattern="^dup")
+  if (length(dup_files)>1){
+  dup<-fread(paste0(tmp,dup_files[1]), sep=";")
+  i<-2
+  for (i in 2:length(dup_files)){
+    dup<-rbind(dup,fread(paste0(tmp,dup_files[i]), sep=";"))
+    dup<-dup[duplicated(combination)]
+  }
+  dup<-dup[,.N]
+  } else {
+    dup<-fread(paste0(tmp,dup_files), sep=";")
+    dup<-dup[duplicated(combination)]
+    dup<-dup[,.N]
+  }
+  rm(dup_files)
+  
+  #Check conventions
+  visits_files<-list.files(tmp, pattern="^visits")
+
+  Res.convention<- data.table(table_name="VISIT_OCCURRENCE", convention_check_visit(visits_files))
+   
+ #Results for person_id
+  #load all person id files
+  persons_files<-list.files(tmp, pattern="^persons", full.names = T)
+  #get size of each file
+  size_persons<-lapply(persons_files, function(x) file.size(x))
+  size_persons<-do.call(rbind,size_persons)
+  size_persons<-data.table(file=persons_files, size_persons)
+  setnames(size_persons, names(size_persons)[2], "size")
+  size_persons[,size:=as.numeric(size)]
+  #order files by size
+  size_persons<-size_persons[order(size)]
+  #get number of persons files
+  length_persons_files<-size_persons[,.N]
+
+  #stratified by meaning
+  if (length(persons_files)>1){
+  Res.p.c<-fread(size_persons[length_persons_files,file])
+  Res.p.c[, comb:=paste(person_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+  for (i in 1:(length_persons_files-1)){
+    a<-fread(size_persons[i,file])
+    a<-a[, comb:=paste(person_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+    Res.p.c<-rbind(Res.p.c,a)
+    Res.p.c<-Res.p.c[!duplicated(comb)]
+    rm(a)
+  }
+  
+  Res.p.c[,comb:=NULL]
+  Res.p.c<-data.table(variable_name="person_id",Res.p.c[!is.na(meaning_of_visit), .(count=.N), by="meaning_of_visit"])
+  names(Res.p.c)<-c("variable_name", "meaning", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+   
+  #stratified by meaning and year
+  Res.p.c.y<-fread(size_persons[length_persons_files,file])
+  Res.p.c.y[, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("person_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+  for (i in 1:(length_persons_files-1)){
+    a<-fread(size_persons[i,file])
+    a<-a[, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("person_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+    Res.p.c.y<-rbind(Res.p.c.y,a)
+    Res.p.c.y<-Res.p.c.y[!duplicated(comb_y)]
+    rm(a)
+  }
+  
+  Res.p.c.y[,comb_y:=NULL]
+  Res.p.c.y<-cbind(variable_name="person_id", Res.p.c.y[!is.na(meaning_of_visit), .(count=.N), by=.(meaning_of_visit, year)])
+  Res.p.c.y<-Res.p.c.y[!is.na(year)]
+  Res.p.c.y[,year:=as.integer(year)]
+  Res.p.t.y<-do.call(rbind, Res.p.t.y)
+  names(Res.p.t.y)<-c("year", "total")
+  Res.p.t.y<-Res.p.t.y[,lapply(.SD, sum), .SDcols=c("total"), by=.(year)]
+  Res.p.t.y[,year:=as.integer(year)]
+#Res.p.c, Res.p.t counts and total stratified by meaning: person_id
+#Res.p.c.y, Res.p.t.y counts and total stratified by meaning and year: person_id
+
+    
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by meaning
+  rm(Res.p.c, Res.p.t)
+  Res.p.y<-merge(Res.p.c.y, Res.p.t.y, by= "year") #results stratified by meaning and year
+  setnames(Res.p.y, "meaning_of_visit", "meaning")
+  setcolorder(Res.p.y, c("variable_name", "meaning", "year", "count", "total"))
+  rm(Res.p.c.y, Res.p.t.y)
+  } 
+  
+  if(length(persons_files)==1){
+  Res.p.c<-fread(persons_files)
+  Res.p.c[, comb:=paste(person_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+  Res.p.c[,comb:=NULL]
+  
+  Res.p.c<-data.table(variable_name="person_id",Res.p.c[!is.na(meaning_of_visit), .(count=.N), by="meaning_of_visit"])
+  names(Res.p.c)<-c("variable_name", "meaning", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+   
+  #stratified by meaning and year
+  Res.p.c.y<-fread(persons_files)
+  Res.p.c.y[, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("person_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+  
+  Res.p.c.y[,comb_y:=NULL]
+        Res.p.c.y<-cbind(variable_name="person_id", Res.p.c.y[!is.na(meaning_of_visit), .(count=.N), by=.(meaning_of_visit, year)])
+  Res.p.c.y<-Res.p.c.y[!is.na(year)]
+Res.p.c.y[,year:=as.integer(year)]
+  Res.p.t.y<-do.call(rbind, Res.p.t.y)
+  names(Res.p.t.y)<-c("year", "total")
+  Res.p.t.y<-Res.p.t.y[,lapply(.SD, sum), .SDcols=c("total"), by=.(year)]
+  Res.p.t.y[,year:=as.integer(year)]
+#Res.p.c, Res.p.t counts and total stratified by meaning: person_id
+#Res.p.c.y, Res.p.t.y counts and total stratified by meaning and year: person_id
+
+    
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by meaning
+  rm(Res.p.c, Res.p.t)
+  Res.p.y<-merge(Res.p.c.y, Res.p.t.y, by= "year") #results stratified by meaning and year
+  setnames(Res.p.y, "meaning_of_visit", "meaning")
+  setcolorder(Res.p.y, c("variable_name", "meaning", "year", "count", "total"))
+  rm(Res.p.c.y, Res.p.t.y)
+}
+  #visit_occurrence_id  
+  
+  visits_files<-list.files(tmp, pattern="^visits", full.names = T)
+    #get size of each file
+  if (length(visits_files)>0){
+  size_visits<-lapply(visits_files, function(x) file.size(x))
+  size_visits<-do.call(rbind,size_visits)
+  size_visits<-data.table(file=visits_files, size_visits)
+  setnames(size_visits, names(size_visits)[2], "size")
+  size_visits[,size:=as.numeric(size)]
+  #order files by size
+  size_visits<-size_visits[order(size)]
+  #get number of persons files
+  length_visits_files<-size_visits[,.N]
+}
+  
+  #stratified by meaning
+  if(length(visits_files)>1){
+  Res.v.c<-fread(size_visits[length_visits_files,file])
+  Res.v.c[, comb:=paste(visit_occurrence_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+  for (i in 1:(length_visits_files-1)){
+    a<-fread(size_visits[i,file])
+    a<-a[, comb:=paste(visit_occurrence_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+    Res.v.c<-rbind(Res.v.c,a)
+    Res.v.c<-Res.v.c[!duplicated(comb)]
+    rm(a)
+  }
+  Res.v.c[,comb:=NULL]
+  Res.v.c<-data.table(variable_name="visit_occurrence_id",Res.v.c[!is.na(meaning_of_visit), .(count=.N), by="meaning_of_visit"])
+  names(Res.v.c)<-c("variable_name", "meaning", "count")
+  Res.v.t<-do.call(rbind, Res.v.t)
+  Res.v.t<-sum(Res.v.t)
+  
+  #stratified by meaning and year
+  Res.v.c.y<-fread(size_visits[length_visits_files,file])[!is.na(year)]
+  Res.v.c.y[, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("visit_occurrence_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+  for (i in 1:(length_visits_files-1)){
+    a<-fread(size_visits[i,file])
+    a<-a[!is.na(year)][, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("visit_occurrence_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+    Res.v.c.y<-rbind(Res.v.c.y,a)
+    Res.v.c.y<-Res.v.c.y[!duplicated(comb_y)]
+    rm(a)
+  }
+  Res.v.c.y[,comb_y:=NULL]
+  Res.v.c.y<-cbind(variable_name="visit_occurrence_id", Res.v.c.y[!is.na(meaning_of_visit), .(count=.N), by=.(meaning_of_visit, year)])
+Res.v.c.y[,year:=as.integer(year)]
+  Res.v.t.y<-do.call(rbind, Res.v.t.y)
+  names(Res.v.t.y)<-c("year", "total")
+  Res.v.t.y<-Res.v.t.y[,lapply(.SD, sum), .SDcols=c("total"), by=.(year)]
+  Res.v.t.y[,year:=as.integer(year)]
+#Res.v.c, Res.v.t counts and total stratified by meaning: person_id
+#Res.v.c.y, Res.v.t.y counts and total stratified by meaning and year: visit_occurrence_id
+
+    
+  Res.v<-data.table(Res.v.c, total=Res.v.t) #results stratified by meaning
+  rm(Res.v.c, Res.v.t)
+  Res.v.y<-merge(Res.v.c.y, Res.v.t.y, by= "year") #results stratified by meaning and year
+  setnames(Res.v.y, "meaning_of_visit", "meaning")
+  setcolorder(Res.v.y, c("variable_name", "meaning", "year", "count", "total"))
+  rm(Res.v.c.y, Res.v.t.y)
+      }
+  
+if (length(visits_files)==1) {
+  Res.v.c<-fread(visits_files)
+  Res.v.c[, comb:=paste(visit_occurrence_id, meaning_of_visit, sep="_^_")][!duplicated(comb)]
+Res.v.c[,comb:=NULL]
+    Res.v.c<-data.table(variable_name="visit_occurrence_id",Res.v.c[!is.na(meaning_of_visit), .(count=.N), by="meaning_of_visit"])
+     names(Res.v.c)<-c("variable_name", "meaning", "count")
+  Res.v.t<-do.call(rbind, Res.v.t)
+  Res.v.t<-sum(Res.v.t)
+  
+  #stratified by meaning and year
+  Res.v.c.y<-fread(visits_files)[!is.na(year)]
+  Res.v.c.y[, comb_y := Reduce(function(...) paste(..., sep = "_^_"), .SD[, c("visit_occurrence_id", "year", "meaning_of_visit")])][!duplicated(comb_y)]
+Res.v.c.y[,comb_y:=NULL]
+  Res.v.c.y<-cbind(variable_name="visit_occurrence_id", Res.v.c.y[!is.na(meaning_of_visit), .(count=.N), by=.(meaning_of_visit, year)])
+Res.v.c.y[,year:=as.integer(year)]
+  Res.v.t.y<-do.call(rbind, Res.v.t.y)
+  names(Res.v.t.y)<-c("year", "total")
+  Res.v.t.y<-Res.v.t.y[,lapply(.SD, sum), .SDcols=c("total"), by=.(year)]
+  Res.v.t.y[,year:=as.integer(year)]
+#Res.v.c, Res.v.t counts and total stratified by meaning: person_id
+#Res.v.c.y, Res.v.t.y counts and total stratified by meaning and year: visit_occurrence_id
+
+    
+  Res.v<-data.table(Res.v.c, total=Res.v.t) #results stratified by meaning
+  rm(Res.v.c, Res.v.t)
+  Res.v.y<-merge(Res.v.c.y, Res.v.t.y, by= "year") #results stratified by meaning and year
+  setnames(Res.v.y, "meaning_of_visit", "meaning")
+  setcolorder(Res.v.y, c("variable_name", "meaning", "year", "count", "total"))
+  rm(Res.v.c.y, Res.v.t.y)
+      }  
+  
+if(length(visits_files)==0) {
+  Res.v<-NULL
+  Res.v.y<-NULL
+}
+
+ 
+  i<-1
+  #Combine results for counts by meaning(other variables)
+  Res.4.1.c<-vector(mode="list", length=length(Res.4.1))
+  Res.4.1.t<-vector(mode="list", length=length(Res.4.1))
+  for (i in 1:length(Res.4.1)){
+    Res.4.1.c[[i]]<-do.call(rbind, Res.4.1[[i]][1])
+     Res.4.1.t[[i]]<-do.call(rbind, Res.4.1[[i]][2])
+  }
+  Res.4.1.c<-do.call(rbind, Res.4.1.c)
+ Res.4.1.t<-do.call(rbind, Res.4.1.t)
+ Res.4.1<-combine_counts1.m(Res.4.1.c, Res.4.1.t)
+ setnames(Res.p, "variable_name", "variable")
+ setnames(Res.v, "variable_name", "variable")
+ Res.4.1<-rbind(Res.4.1, Res.p, Res.v)
+   i<-1
+ #Combine results for counts by meaning and year(other variables)
+   Res.4.2.c<-vector(mode="list", length=length(Res.4.2))
+  Res.4.2.t<-vector(mode="list", length=length(Res.4.2))
+  for (i in 1:length(Res.4.2)){
+    Res.4.2.c[[i]]<-do.call(rbind, Res.4.2[[i]][1])
+     Res.4.2.t[[i]]<-do.call(rbind, Res.4.2[[i]][2])
+  }
+  Res.4.2.c<-do.call(rbind, Res.4.2.c)
+ Res.4.2.t<-do.call(rbind, Res.4.2.t)
+ Res.4.2<-combine_counts1.my(Res.4.2.c, Res.4.2.t)
+ setnames(Res.p.y, "variable_name", "variable")
+ setnames(Res.v.y, "variable_name", "variable")
+  Res.4.2<-rbind(Res.4.2, Res.p.y, Res.v.y)
+  i<-1
+  #Combine counts by meaning(2 or more categories)
+ Res.4.3.c<-vector(mode="list", length=length(Res.4.3))
+  Res.4.3.t<-vector(mode="list", length=length(Res.4.3))
+  for (i in 1:length(Res.4.3)){
+    Res.4.3.c[[i]]<-do.call(rbind, Res.4.3[[i]][1])
+     Res.4.3.t[[i]]<-do.call(rbind, Res.4.3[[i]][2])
+  }
+  Res.4.3.c<-do.call(rbind, Res.4.3.c)
+ Res.4.3.t<-do.call(rbind, Res.4.3.t)
+ Res.4.3<-combine_counts2.m(Res.4.3.c, Res.4.3.t)
+  i<-1
+ #Combine counts by meaning and year(2 or more categories)
+ Res.4.4.c<-vector(mode="list", length=length(Res.4.4))
+  Res.4.4.t<-vector(mode="list", length=length(Res.4.4))
+  for (i in 1:length(Res.4.4)){
+    Res.4.4.c[[i]]<-do.call(rbind, Res.4.4[[i]][1])
+     Res.4.4.t[[i]]<-do.call(rbind, Res.4.4[[i]][2])
+  }
+  Res.4.4.c<-do.call(rbind, Res.4.4.c)
+ Res.4.4.t<-do.call(rbind, Res.4.4.t)
+ Res.4.4<-combine_counts2.my(Res.4.4.c, Res.4.4.t)
+  
+ i<-1
+ #Combine counts for dates by meaning
+ Res.dates.m.c<-vector(mode="list", length=length(Res.dates.m))
+  Res.dates.m.t<-vector(mode="list", length=length(Res.dates.m))
+  for (i in 1:length(Res.dates.m)){
+    Res.dates.m.c[[i]]<-do.call(rbind, Res.dates.m[[i]][1])
+     Res.dates.m.t[[i]]<-do.call(rbind, Res.dates.m[[i]][2])
+  }
+  Res.dates.m.c<-do.call(rbind, Res.dates.m.c)
+ Res.dates.m.t<-do.call(rbind, Res.dates.m.t)
+ Res.dates.m<-combine_counts1.m(Res.dates.m.c, Res.dates.m.t)
+  i<-1
+ #Combine counts for dates by meaning and year
+  Res.dates.my.c<-vector(mode="list", length=length(Res.dates.my))
+  Res.dates.my.t<-vector(mode="list", length=length(Res.dates.my))
+  for (i in 1:length(Res.dates.my)){
+    Res.dates.my.c[[i]]<-do.call(rbind, Res.dates.my[[i]][1])
+     Res.dates.my.t[[i]]<-do.call(rbind, Res.dates.my[[i]][2])
+  }
+  Res.dates.my.c<-do.call(rbind, Res.dates.my.c)
+ Res.dates.my.t<-do.call(rbind, Res.dates.my.t)
+ Res.dates.my<-combine_counts1.my(Res.dates.my.c, Res.dates.my.t)
+ 
+  #######################
+ 
+ Res.4.1<-Res.4.1[meaning !="NA"]
+ Res.4.2<-Res.4.2[meaning !="NA"]
+ Res.4.3<-Res.4.3[meaning !="NA"]
+ Res.4.4<-Res.4.4[meaning !="NA"]
+ Res.dates.m<-Res.dates.m[meaning !="NA"]
+ Res.dates.my<-Res.dates.my[meaning !="NA"]
+ 
+  output<-list("CONVENTION"= Res.convention, "COUNT1_M"=Res.4.1, "COUNT1_MY"=Res.4.2, "COUNT2_M"=Res.4.3[vocabulary!="NA"], "COUNT2_MY"=Res.4.4[vocabulary !="NA"], "DATES.M"=Res.dates.m, "DATES_MY"=Res.dates.my, "DUP"=dup)
+return(output)
+}
+
+```
+
+```{r run_script, echo=FALSE}
+Results.visit_occurrence<-step_4_5_check(actual_tables)
+```
+
+```{r include=FALSE}
+ unlink(paste0(visits_dir, "tmp"), recursive = T)
+```
+
+
+```{r include=FALSE}
+rm(convention_check_visit, combine_counts1.m, combine_counts1.my, combine_counts2.m, combine_counts2.my, dates_count.m, dates_count.my, step_4_5_check, step4.1, step4.2, step4.3, step4.4)
+```
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions:  
+**1.** `visit_occurrence_id` is a primary key (no duplicates are allowed).    
+   
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+Duplicated rows:
+
+```{r duplicated_rows, echo=FALSE}
+dup<-Results.visit_occurrence$DUP
+
+if(dup>0){
+  print(paste0("There are ", dup, " duplicated rows in the data. Take caution when interpreting counts."))
+} else {
+  print("There are no duplicated rows in the data.")
+}
+```
+
+
+
+## 1. Convention check
+
+Check if conventions are satisfied.
+
+```{r results_convention, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+#Output for convention check
+Res.convention<-Results.visit_occurrence$CONVENTION
+
+if (nrow(Res.convention[error==TRUE])==0){
+  print("All conventions are satisfied.")
+} else {
+  datatable(Res.convention[error==TRUE], option=list(scrollX=TRUE))
+}
+
+
+```
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+
+## 2. Counts of categorical variables
+
+<br>
+
+Counts will be divided based on the number of categories:   
+ 
+2 or more categories:    
+**a.** specialty_of_visit_vocabulary  
+**b** status_at_discharge_vocabulary  
+**c.** meaning_of_visit  
+**d.** origin_of_visit  
+
+Other variables:  
+**a.** person_id  
+**b** visit_occurrence_id  
+**c.** specialty_of_visit   
+**d.** status_at_discharge     
+
+Counts and totals smaller than 5 will be replaced with "<5", and percentages with N/A(Not applicable).  
+ 
+<br>
+
+#### **Counts stratified by meaning (2 or more categories)** 
+
+```{r count2_m, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count2.m<-data.table(table_name="VISIT_OCCURRENCE", Results.visit_occurrence$COUNT2_M)
+setnames(Res.count2.m, "variable", "variable_name")
+#Remove empty vocabulary values
+Res.count2.m<-Res.count2.m[!(is.na(vocabulary))]
+Res.count2.m<-Res.count2.m[vocabulary!=""]
+Res.count2.m<-Res.count2.m[!(is.na(meaning))]
+Res.count2.m<-Res.count2.m[meaning!=""]
+if (nrow(Res.count2.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count2.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category."))
+}
+#Remove rows where both count and total are zero
+Res.count2.m<-Res.count2.m[(count !=0 & total !=0)]
+#Calculate percentages
+Res.count2.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count2.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count2.m, paste(visits_dir,"visits_meaning_2categories.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count2.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count2.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count2.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"] #replace total as well if lower than 5
+
+#Put <5 counts in another dataset for graphs
+Res.count2.m.1<-Res.count2.m[count != "<5"]
+Res.count2.m.1[, count:= as.numeric(count)]
+Res.count2.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count2.m[,.N] != 0){
+datatable(Res.count2.m, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+}
+
+#Save results as .csv file
+write.csv(Res.count2.m, paste(visits_less,"visits_meaning_2categories_masked.csv",sep="") ,row.names = F)
+```
+
+```{r graph_count2_m, echo=FALSE}
+if (Res.count2.m.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+fig2.m<-vector(mode="list", length=length(unique(Res.count2.m.1[["variable_name"]])))
+for(i in 1:length(unique(Res.count2.m.1[["variable_name"]]))){
+  fig2.m[[i]]<-ggplotly(ggplot(Res.count2.m.1[variable_name==unique(Res.count2.m.1[["variable_name"]])[i]],
+                               aes(x = meaning, y = percentage, fill=vocabulary)) +
+                          geom_bar(position="dodge", stat="identity") +
+                          theme_classic() +
+                          ggtitle(unique(Res.count2.m.1[["variable_name"]])[i]) + 
+                          xlab("Meaning") +
+                          ylab("Percentage")+
+                          ylim(0,100) +
+                          theme(axis.text.x = element_text(angle = 45),
+                                axis.title.x = element_text(colour = "#76b82a"),
+                                axis.title.y = element_text(colour = "#76b82a"),
+                                plot.title = element_text(colour = "#76b82a")))
+}
+}
+```
+
+```{r diplay_graph_count2_m, echo=FALSE}
+if (Res.count2.m.1[,.N] != 0){
+htmltools::tagList(list(fig2.m))
+}
+```
+
+<br>
+
+#### **Counts stratified by meaning (other variables)**
+
+```{r count1_m, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count1.m<-data.table(table_name="VISIT_OCCURRENCE", Results.visit_occurrence$COUNT1_M)
+setnames(Res.count1.m, "variable", "variable_name")
+Res.count1.m<-Res.count1.m[(!(is.na(meaning)))]
+Res.count1.m<-Res.count1.m[meaning != ""]
+if (nrow(Res.count1.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count1.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category."))
+}
+#Remove rows where both count and total are zero
+Res.count1.m<-Res.count1.m[(count !=0 & total !=0)]
+Res.count1.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count1.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(visits_dir,"visits_meaning_other.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count1.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count1.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+Res.count1.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+
+#Put <5 counts in another dataset for graphs
+Res.count1.m.1<-Res.count1.m[count != "<5"]
+Res.count1.m.1[, count:= as.numeric(count)]
+Res.count1.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count1.m[,.N] != 0){
+datatable(Res.count1.m,  option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+}
+
+#Save results as .csv file
+write.csv(Res.count1.m, paste(visits_less,"visits_meaning_other_masked.csv",sep="") ,row.names = F)
+
+```
+
+
+```{r graph_count1_m, echo=FALSE}
+if (Res.count1.m.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+ggplotly(ggplot(Res.count1.m.1, aes(x = meaning, y = percentage)) +
+           geom_linerange(
+             aes(x=meaning, ymin=0, ymax=percentage, group= variable_name),
+             color="gray", size=1.5,
+             position = position_dodge(0.6)) + 
+           geom_point(
+             aes(color=variable_name),
+             position=position_dodge(0.6), size=2
+           ) +
+           theme_classic() +
+           ggtitle("Counts stratified by meaning") + 
+           xlab("Meaning") +
+           ylab("Percentage")+
+           ylim(0,100) +
+           theme(axis.text.x = element_text(angle = 45),
+                 axis.title.x = element_text(colour = "#76b82a"),
+                 axis.title.y = element_text(colour = "#76b82a"),
+                 plot.title = element_text(colour = "#76b82a")))
+}
+```
+
+<br>
+
+#### **Counts stratified by meaning and year (2 or more categories)**
+
+If years before 1995 or years in the future are present, they will be colored red.   
+
+```{r count2_my, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count2.my<-data.table(table_name="VISIT_OCCURRENCE", Results.visit_occurrence$COUNT2_MY)
+setnames(Res.count2.my, "variable", "variable_name")
+#Remove empty vocabulary values
+Res.count2.my<-Res.count2.my[!(is.na(vocabulary))]
+Res.count2.my<-Res.count2.my[vocabulary!=""]
+Res.count2.my<-Res.count2.my[!(is.na(meaning))]
+Res.count2.my<-Res.count2.my[meaning!=""]
+Res.count2.my[, year:=as.numeric(year)]
+if (nrow(Res.count2.my[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count2.my[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category and year."))
+}
+#Remove rows where both count and total are 0
+Res.count2.my<-Res.count2.my[(count !=0 & total !=0)]
+Res.count2.my[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 6 level
+Res.count2.my[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count2.my, paste(visits_dir,"visits_meaning_year_2categories.csv",sep=""),row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count2.my[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count2.my[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count2.my[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.count2.my.1<-Res.count2.my[count != "<5"]
+Res.count2.my.1[, count:= as.numeric(count)]
+Res.count2.my.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count2.my[,.N] != 0){
+datatable(Res.count2.my, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold'))
+)
+}
+
+#Save results as .csv file
+write.csv(Res.count2.my, paste(visits_less,"visits_meaning_year_2categories_masked.csv",sep=""),row.names = F)
+
+```
+
+If years in the future or before 1995 are present they will not be plotted in the graphs.   
+
+```{r graph_count2_my, echo=FALSE}
+if (Res.count2.my.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+library(grid)
+Res.count2.my.graph<-Res.count2.my.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1995]
+Res.count2.my.graph[,year:=as.character(year)]
+fig.count2.my<-vector(mode="list", length=length(unique(Res.count2.my.graph[["variable_name"]])))
+for(i in 1:length(unique(Res.count2.my.graph[["variable_name"]]))) {
+  fig.count2.my[[i]]<-ggplotly(ggplot(Res.count2.my.graph[variable_name==unique(Res.count2.my.graph[["variable_name"]])[i]],aes(x = year, y = percentage, group=vocabulary)) +
+                           geom_line(aes(color=vocabulary)) +
+                           geom_point(aes(color=vocabulary)) + 
+                            facet_wrap(~ meaning, ncol=2, scales = "fixed") +
+                               ggtitle(unique(Res.count2.my.graph[["variable_name"]])[i]) + 
+                               xlab("Year") +
+                               ylab("Percentage")+
+                             theme_classic() +
+                             ylim(0,100) +
+                             guides(shape = guide_legend(override.aes = list(size = 0.3))) +
+                               theme(text=element_text(size=10),
+                                 axis.text.x = element_text(angle = 90, hjust = 1),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a"),
+                                     strip.text.y = element_text(angle = 0),
+                                     legend.title = element_text(size = 7), 
+               legend.text = element_text(size = 7))) 
+                                     
+}
+
+#Move the x axis title down so it doesn't overlap with the labels
+for (i in 1: length(fig.count2.my)){
+fig.count2.my[[i]][['x']][['layout']][['annotations']][[1]][['y']] <--0.15
+}
+}
+```
+
+
+```{r display_graph_count2_my, echo=FALSE}
+if (Res.count2.my.1[,.N] != 0){
+htmltools::tagList(list(fig.count2.my))
+}
+```
+
+<br> 
+
+#### **Counts stratified by meaning and year (other variables)**
+
+If years before 1995 or years in the future are present, they will be colored red.  
+
+```{r count1_my, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.count1.my<-data.table(table_name="VISIT_OCCURRENCE", Results.visit_occurrence$COUNT1_MY)
+setnames(Res.count1.my, "variable", "variable_name")
+Res.count1.my<-Res.count1.my[(!(is.na(meaning)))]
+Res.count1.my<-Res.count1.my[meaning != ""]
+Res.count1.my[, year:=as.numeric(year)]
+if (nrow(Res.count1.my[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.count1.my[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category and year."))
+}
+#Remove rows where both count and total are 0
+Res.count1.my<-Res.count1.my[(count !=0 & total !=0)]
+Res.count1.my[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count1.my[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.count1.my, paste(visits_dir,"visits_meaning_year_other.csv",sep=""), row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count1.my[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count1.my[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count1.my[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset for graphs
+Res.count1.my.1<-Res.count1.my[count != "<5"]
+Res.count1.my.1[, count:= as.numeric(count)]
+Res.count1.my.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count1.my[,.N] != 0){
+datatable(Res.count1.my, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold'))
+)
+}
+                                                                    
+#Save results as .csv file
+write.csv(Res.count1.my, paste(visits_less,"visits_meaning_year_other_masked.csv",sep=""), row.names = F)
+```
+
+
+If years in the future or before 1995 are present they will not be plotted in the graphs.   
+
+```{r graph_count1_my, echo=FALSE}
+if (Res.count1.my.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+Res.count1.my.graph<-Res.count1.my.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1995]
+Res.count1.my.graph[,year:=as.character(year)]
+fig1.my<-vector(mode="list", length=length(unique(Res.count1.my.graph[["variable_name"]])))
+for(i in 1:length(unique(Res.count1.my.graph[["variable_name"]]))) {
+  fig1.my[[i]]<-ggplotly(ggplot(Res.count1.my.graph[variable_name==unique(Res.count1.my.graph[["variable_name"]])[i]],aes(x = year, y = percentage, group=meaning)) +
+                           geom_line(aes(color=meaning)) +
+                           geom_point(aes(color=meaning)) +
+                               ggtitle(unique(Res.count1.my.graph[["variable_name"]])[i]) + 
+                               xlab("Year") +
+                               ylab("Percentage")+
+                           theme_classic() +
+                           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 90, hjust=1),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+}
+```
+
+```{r display_graph_count1_my, echo=FALSE}
+if (Res.count1.my.1[,.N] != 0){
+htmltools::tagList(list(fig1.my))
+}
+```
+
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Distribution of continous variables and counts of date variables
+
+<br> 
+
+#### **Distribution of continous variables**
+
+The VISIT_OCCURRENCE table does not contain continous variables.
+<br>
+
+#### **Counts of dates variables**
+
+<br>
+
+#### **Counts stratified by meaning**
+
+```{r count.dates_m, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+Res.dates.m<-data.table(table_name="VISIT_OCCURRENCE", Results.visit_occurrence$DATES.M)
+setnames(Res.dates.m, "variable", "variable_name")
+Res.dates.m<-Res.dates.m[(!(is.na(meaning)))]
+Res.dates.m<-Res.dates.m[meaning != ""]
+if (nrow(Res.dates.m[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.dates.m[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category."))
+}
+#Remove rows where both count and total are 0
+Res.dates.m<-Res.dates.m[(count !=0 & total !=0)]
+Res.dates.m[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.dates.m[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.dates.m, paste(visits_dir,"visits_meaning_dates.csv",sep=""), row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.dates.m[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.dates.m[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.dates.m[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset for graphs
+Res.dates.m.1<-Res.dates.m[count != "<5"]
+Res.dates.m.1[, count:= as.numeric(count)]
+Res.dates.m.1[, percentage:= as.numeric(percentage)]
+
+if (Res.dates.m[,.N] != 0){
+datatable(Res.dates.m, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+}
+
+#Save results as .csv file
+write.csv(Res.dates.m, paste(visits_less,"visits_meaning_dates_masked.csv",sep=""), row.names = F)
+```
+
+
+```{r graph_count.dates_m, echo=FALSE}
+if (Res.dates.m.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+ggplotly(ggplot(Res.dates.m.1, aes(x = meaning, y = percentage)) +
+                               geom_linerange(
+                                 aes(x=meaning, ymin=0, ymax=percentage, group= variable_name),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.2)) + 
+                              geom_point(
+                                aes(color=variable_name),
+                                position=position_dodge(0.2), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Counts of date variables by meaning") + 
+                               xlab("Meaning") +
+                               ylab("Percentage")+
+           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 45),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+```
+
+<br>
+
+#### **Counts stratified by meaning and year**
+
+If years before 1995 or years in the future are present, they will be colored red. 
+
+```{r count.dates_my, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+#Output for dates count by meaning and year
+Res.dates.my<-data.table(table_name="VISIT_OCCURRENCE",Results.visit_occurrence$DATES_MY)
+setnames(Res.dates.my, "variable", "variable_name")
+Res.dates.my<-Res.dates.my[(!(is.na(meaning)))]
+Res.dates.my<-Res.dates.my[meaning != ""]
+Res.dates.my[, year:=as.numeric(year)]
+if (nrow(Res.dates.my[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are)", nrow(Res.dates.my[(count ==0 & total ==0)]), "row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular meaning category and year."))
+}
+#Remove rows where both count and total are 0
+Res.dates.my<-Res.dates.my[(count !=0 & total !=0)]
+Res.dates.my[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.dates.my[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.dates.my, paste(visits_dir,"visits_meaning_year_dates.csv",sep=""),row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.dates.my[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.dates.my[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.dates.my[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset for graphs
+Res.dates.my.1<-Res.dates.my[count != "<5"]
+Res.dates.my.1[, count:= as.numeric(count)]
+Res.dates.my.1[, percentage:= as.numeric(percentage)]
+
+if (Res.dates.my[,.N] != 0){
+datatable(Res.dates.my, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1995, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold'))
+)
+}                                                                   
+#Save results as .csv file
+write.csv(Res.dates.my, paste(visits_less,"visits_meaning_year_dates_masked.csv",sep=""),row.names = F)
+```
+
+If years in the future or before 1995 are present they will not be plotted in the graphs.   
+
+```{r graph_count.dates_my, echo=FALSE}
+if (Res.dates.my.1[,.N] != 0){
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(plotly))
+Res.dates.my.graph<-Res.dates.my.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1995]
+Res.dates.my.graph[,year:=as.character(year)]
+fig.dates.my<-vector(mode="list", length=length(unique(Res.dates.my.graph[["variable_name"]])))
+for(i in 1:length(unique(Res.dates.my.graph[["variable_name"]]))) {
+  fig.dates.my[[i]]<-ggplotly(ggplot(Res.dates.my.graph[variable_name==unique(Res.dates.my.graph[["variable_name"]])[i]],aes(x = year, y = percentage, group=meaning)) +
+                           geom_line(aes(color=meaning)) +
+                           geom_point(aes(color=meaning)) +
+                               ggtitle(unique(Res.dates.my.graph[["variable_name"]])[i]) + 
+                               xlab("Year") +
+                               ylab("Percentage")+
+                             ylim(0,100) +
+                             theme_classic() +
+                               theme(axis.text.x = element_text(angle = 90, hjust=1),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+}
+```
+
+```{r display_graph_count.dates_my, echo=FALSE}
+if (Res.dates.my.1[,.N] != 0){
+htmltools::tagList(list(fig.dates.my))
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+
+## 4. Calculations
+
+<br> 
+
+In this section is explained how each count is being calculated.  
+Numerator= count  
+Denominator= total   
+Year= retrieved from the year part of the variable `visit_start_date`. Exception for the date counts where the year is retrieved from the year part of the date variable itself.
+
+```{r calculations_results, echo=FALSE}
+suppressPackageStartupMessages(library(DT))
+calculations_visits<-data.table(rbind(
+  cbind(calculation= "Counts stratified by meaning(other variables)", variable_name=c("person_id", "visit_occurrence_id", "speciality_of_visit", "status_at_discharge"), numerator=c("Number of unique persons", "Number of unique visit occurrence id", "Number of complete observations per meaning category", "Number of complete observations per meaning category"), denominator=c("Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning")),
+    cbind(calculation= "Counts stratified by meaning and year(other variables)", variable_name=c("person_id", "visit_occurrence_id", "speciality_of_visit", "status_at_discharge"), numerator=c("Number of unique persons", "Number of unique visit occurrence id", "Number of complete observations per meaning category in a particular year", "Number of complete observations per meaning category in a particular year"), denominator=c("Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year")),
+      cbind(calculation= "Counts stratified by meaning(2 or more categories)", variable_name=c("speciality_of_visit_vocabulary", "status_at_discharge_vocabulary", "meaning_of_visit", "origin_of_visit"), numerator=c("Number of complete observations per category", "Number of complete observations per category", "Number of complete observations per category", "Number of complete observations per category"), denominator=c("Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning")),
+      cbind(calculation= "Counts stratified by meaning and year(2 or more categories)", variable_name=c("speciality_of_visit_vocabulary", "status_at_discharge_vocabulary", "meaning_of_visit", "origin_of_visit"), numerator=c("Number of complete observations per category", "Number of complete observations per category", "Number of complete observations per category", "Number of complete observations per category"), denominator=c("Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year")),
+  cbind(calculation= "Date counts stratified by meaning", variable_name=c("visit_start_date", "visit_end_date"), numerator=c( "Number of complete observations per meaning category", "Number of complete observations per meaning category"), denominator=c("Number of total observations with a recorded meaning", "Number of total observations with a recorded meaning in a particular year")),
+  cbind(calculation= "Date counts stratified by meaning and year", variable_name=c("visit_start_date", "visit_end_date"), numerator=c( "Number of complete observations per meaning category in a particular year", "Number of complete observations per meaning category in a particular year"), denominator=c("Number of total observations with a recorded meaning in a particular year", "Number of total observations with a recorded meaning in a particular year"))
+))
+datatable(calculations_visits)
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 5. Output folder structure   
+
+VISIT_OCCURRENCE     
+**1.** VISIT_OCCURRENCE.html: Rmarkdown report      
+**2.** `visits_meaning_2categories.csv`: counts of variables with 2 or more categories stratified by meaning      
+**3.** `visits_meaning_other.csv`: counts of other variables stratified by meaning          
+**4.** `visits_meaning_year_2categories.csv`: counts of variables with 2 or more categories stratified by meaning and year         
+**5.** `visits_meaning_year_other.csv`: counts of other variables stratified by meaning and year         
+**6.** `visits_meaning_dates.csv`: counts of date variables stratified by meaning           
+**7.** `visits_meaning_year_other.csv`: counts of date variables stratified by meaning and year    
+**8.** Masked:      
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `visits_meaning_2categories_masked.csv`: counts of variables with 2 or more categories stratified by meaning where counts smaller than 5 are masked          
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `visits_meaning_other_masked.csv`: counts of other variables stratified by meaning where counts smaller than 5 are masked       
+&nbsp;&nbsp;&nbsp;&nbsp;***c.*** `visits_meaning_year_2categories_masked.csv`: counts of variables with 2 or more categories stratified by meaning and year where counts smaller than 5 are masked            
+&nbsp;&nbsp;&nbsp;&nbsp;***d.*** `visits_meaning_year_other_masked.csv`: counts of other variables stratified by meaning and year where counts smaller than 5 are masked     
+&nbsp;&nbsp;&nbsp;&nbsp;***e.*** `visits_meaning_dates_masked.csv`: counts of date variables stratified by meaning where counts smaller than 5 are masked               
+&nbsp;&nbsp;&nbsp;&nbsp;***f.*** `visits_meaning_year_dates_masked.csv`: counts of date variables stratified by meaning and year where counts smaller than 5 are masked    
+
+</div>
+
+
+

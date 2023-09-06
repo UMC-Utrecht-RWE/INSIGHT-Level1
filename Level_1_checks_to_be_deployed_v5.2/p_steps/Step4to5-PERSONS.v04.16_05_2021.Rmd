@@ -1,0 +1,846 @@
+---
+title: 'CONCEPTION - Level 1 checks: Step 4 to 5 (PERSONS)'
+output: 
+  html_document:
+    theme: spacelab
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    output_dir: output_dir
+---
+
+```{r create_dir, include=FALSE}
+if ("PERSONS" %in% list.files(output_dir)){
+  persons_dir<-paste(output_dir, "PERSONS/", sep="")
+  persons_less<-paste(persons_dir, "Masked/", sep="")
+      dir.create(paste(persons_dir,"tmp", sep=""))
+ tmp<-paste(persons_dir, "tmp/", sep="")
+} else {
+#Create the PERSONS folder in the output dir
+dir.create(paste(output_dir, "PERSONS", sep=""))
+  persons_dir<-paste(output_dir, "PERSONS/", sep="")
+  dir.create(paste(persons_dir,"Masked", sep=""))
+persons_less<-paste(persons_dir, "Masked/", sep="")
+      dir.create(paste(persons_dir,"tmp", sep=""))
+ tmp<-paste(persons_dir, "tmp/", sep="")
+}
+```
+
+```{css,  echo = F}
+/*-- Specify div's for 'boxes', change color of TOC and center align titles: --*/
+div.box1 {background-color: #f5f5f0; border-radius: 5px; padding: 30px; margin-right: 0px}
+div.box2 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box3 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box4 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+div.box5 {border-style: solid; border-color: #f5f5f0; border-width: medium; border-radius: 30px; padding: 5px; margin-right: 0px}
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {background-color: #76b82a; border-color: #76b82a}
+h1 {text-align: center; color: #3c7b8a}
+h2 {text-align: center; color: #76b82a}
+
+/*-- Add logo (based on https://rstudio4edu.github.io/rstudio4edu-book/rmd-fancy.html): --*/
+#TOC::before {content: ""; display: block; height: 60px; margin: 15px 10px 15px; background-image: url("conception_logo.png"); background-size: contain; background-position: center center; background-repeat: no-repeat}
+```
+
+```{r set_locale, include=FALSE}
+Sys.setlocale("LC_ALL", "C")
+`%!in%` = Negate(`%in%`)
+```
+
+``` {r list_of_variables, echo = FALSE}
+total_var<-as.data.table(cbind(table_name="PERSONS", 
+        variable_name=c("person_id", "day_of_birth", "month_of_birth", "year_of_birth", "day_of_death", "month_of_death", "year_of_death", "sex_at_instance_creation", "race",
+"country_of_birth", "quality")))
+```
+
+```{r check_directory, include=FALSE}
+#Get all files in the CDM directory that are .csv files
+directory_CDM<-list.files(path_dir, pattern="\\.csv$")
+
+#List of actual tables that match EVENTS pattern
+actual_tables<-directory_CDM[grepl(pattern="PERSONS", x=directory_CDM)]
+```
+
+```{r convention_check, include=FALSE}
+convention_check_persons<-function(pers_dt){
+  
+  con.1<-pers_dt
+  
+  if (con.1 >0){
+    error<-TRUE
+    comment<-paste("Convention 1 is not satisfied.There is(are)", con.1, 
+                   "duplicated person id(s) in the table PERSONS.")
+  } else {
+    error<-FALSE
+    comment<-"Convention 1 is satisfied."
+  }
+  
+  result<-data.table(error=error, comment=comment)
+  return(result)
+}
+```
+
+```{r count_functions, include=FALSE}
+#Counts by year (other variables)
+step4.1<-function(dt, year_var){
+
+  dt[, year:= dt[[year_var]]] #Duplicate year variable
+  #race
+  a.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("race"), by= .(year)]
+  a.1<-data.table::melt(a.1, id.vars=c("year"))
+  setnames(a.1, "value", "count")
+  a.2<-dt[complete.cases(year) & complete.cases(race), .N]
+  a.2<-data.table(variable="race", total=a.2)
+  
+    #country_of_birth
+  b.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("country_of_birth"), by= .(year)]
+  b.1<-data.table::melt(b.1, id.vars=c("year"))
+  setnames(b.1, "value", "count")
+  b.2<-dt[complete.cases(year) & complete.cases(country_of_birth), .N]
+  b.2<-data.table(variable="race", total=b.2)
+  
+count<-rbind(a.1,b.1)
+setcolorder(count, c("variable", "year", "count"))
+total<-rbind(a.2,b.2)
+results<-list("count"=count, "total"=total)
+return(results)
+}
+
+#Counts by year (2 or more categories)
+step4.2<-function(dt, year_var){
+  dt[, year:= dt[[year_var]]]
+
+#sex_at_instance_creation
+a.1<-dt[complete.cases(year), .(count=.N), by=.(year, sex_at_instance_creation)]
+setnames(a.1, "sex_at_instance_creation", "vocabulary")
+a.1<-cbind(a.1, variable="sex_at_instance_creation")
+a.2<-dt[complete.cases(year) & complete.cases(sex_at_instance_creation), .N]
+a.2<-data.table(variable="sex_at_instance_creation", total=a.2)
+
+#quality
+b.1<-dt[complete.cases(year), .(count=.N), by=.(year, quality)]
+setnames(b.1, "quality", "vocabulary")
+b.1<-cbind(b.1, variable="quality")
+b.2<-dt[complete.cases(year) & complete.cases(quality), .N]
+b.2<-data.table(variable="quality", total=b.2)
+
+count<-rbind(a.1,b.1)
+setcolorder(count, c("variable", "year", "vocabulary", "count"))
+total<-rbind(a.2,b.2)
+results<-list("count"=count, "total"=total)
+return(results)
+}
+
+#Date counts by year
+dates_count.y<-function(dt, year_var){
+  dt[, year:= dt[[year_var]]] #Duplicate year variable
+  #Create filter variables 
+  ######
+  #day_of_birth, month_of_birth and year_of_birth present
+  dt[complete.cases(day_of_birth) & complete.cases(month_of_birth) & complete.cases(year_of_birth), dmy_b:=1]
+  dt[is.na(day_of_birth) & complete.cases(month_of_birth) & complete.cases(year_of_birth), dmy_b:=0]
+  dt[complete.cases(day_of_birth) & is.na(month_of_birth) & complete.cases(year_of_birth), dmy_b:=0]
+  dt[is.na(day_of_birth) & is.na(month_of_birth) & complete.cases(year_of_birth), dmy_b:=0]
+  dt[is.na(year_of_birth), dmy_b:=NA]
+  #month_of_birth and year_of_birth present
+  dt[is.na(day_of_birth) & complete.cases(month_of_birth) & complete.cases(year_of_birth), my_b:=1]
+  dt[complete.cases(day_of_birth) & complete.cases(month_of_birth) & complete.cases(year_of_birth), my_b:=0]
+  dt[is.na(day_of_birth) & is.na(month_of_birth) & complete.cases(year_of_birth), my_b:=0]
+  dt[complete.cases(day_of_birth) & is.na(month_of_birth) & complete.cases(year_of_birth), my_b:=0]
+  dt[is.na(year_of_birth), my_b:=NA]
+  #day_of_death, month_of_death and year_of_death present
+  dt[complete.cases(day_of_death) & complete.cases(month_of_death) & complete.cases(year_of_death), dmy_d:=1]
+  dt[is.na(day_of_death) & complete.cases(month_of_death) & complete.cases(year_of_death), dmy_d:=0]
+  dt[complete.cases(day_of_death) & is.na(month_of_death) & complete.cases(year_of_death), dmy_d:=0]
+  dt[is.na(day_of_death) & is.na(month_of_death) & complete.cases(year_of_death), dmy_d:=0]
+  dt[is.na(year_of_death), dmy_d:=NA]
+  #month_of_death and year_of_death present
+  dt[is.na(day_of_death) & complete.cases(month_of_death) & complete.cases(year_of_death), my_d:=1]
+  dt[complete.cases(day_of_death) & complete.cases(month_of_death) & complete.cases(year_of_death), my_d:=0]
+  dt[is.na(day_of_death) & is.na(month_of_death) & complete.cases(year_of_death), my_d:=0]
+  dt[complete.cases(day_of_death) & is.na(month_of_death) & complete.cases(year_of_death), my_d:=0]
+  dt[is.na(year_of_death), my_d:=NA]
+    
+    #day_of_birth
+    b.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("day_of_birth"), by=.(year)]
+    b.1<-data.table::melt(b.1, id.vars=c("year"), measure.vars=colnames(b.1)[-1])
+    setnames(b.1, "value", "count")
+    b.2<-dt[complete.cases(year) & complete.cases(day_of_birth), .N]
+    b.2<-data.table(variable="day_of_birth", total=b.2)
+    
+    #month_of_birth
+    c.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("month_of_birth"), by=.(year)] 
+    c.1<-data.table::melt(c.1, id.vars=c("year"), measure.vars=colnames(c.1)[-1]) #from wide to long  
+    setnames(c.1, "value", "count")
+    c.2<-dt[complete.cases(year) & complete.cases(month_of_birth), .N]
+    c.2<-data.table(variable="month_of_birth", total=c.2)
+    
+    #year_of_birth
+    d.1<-dt[complete.cases(year),lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("year_of_birth"), by=.(year)] 
+    d.1<-data.table::melt(d.1, id.vars=c("year"), measure.vars=colnames(d.1)[-1]) #from wide to long  
+    setnames(d.1, "value", "count")
+    d.2<-dt[complete.cases(year) & complete.cases(year_of_birth), .N]
+    d.2<-data.table(variable="year_of_birth", total=d.2)
+    
+    #day_of_death
+    e.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("day_of_death"), by=.(year)] 
+    e.1<-data.table::melt(e.1, id.vars=c("year"), measure.vars=colnames(e.1)[-1]) #from wide to long  
+    setnames(e.1, "value", "count")
+    e.2<-dt[complete.cases(year) & complete.cases(day_of_death), .N]
+    e.2<-data.table(variable="day_of_death", total=e.2)
+    
+    #month_of_death
+    f.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("month_of_death"), by=.(year)] 
+    f.1<-data.table::melt(f.1, id.vars=c("year"), measure.vars=colnames(f.1)[-1]) #from wide to long  
+    setnames(f.1, "value", "count")
+    f.2<-dt[complete.cases(year) & complete.cases(month_of_death), .N]
+    f.2<-data.table(variable="month_of_death", total=f.2)
+    
+    #year_of_death
+    g.1<-dt[complete.cases(year), lapply(.SD, FUN=function(x) sum(complete.cases(x))), .SDcols=c("year_of_death"), by=.(year)] 
+    g.1<-data.table::melt(g.1, id.vars=c("year"), measure.vars=colnames(g.1)[-1]) #from wide to long  
+    setnames(g.1, "value", "count")
+    g.2<-dt[complete.cases(year) & complete.cases(year_of_death), .N]
+    g.2<-data.table(variable="year_of_death", total=g.2)
+    
+    #day_of_birth, month_of_birth and year_of_birth present
+    h.1<-dt[complete.cases(year) & complete.cases(dmy_b), lapply(.SD, FUN=sum), .SDcols=c("dmy_b"), by=.(year)] 
+    setnames(h.1, "dmy_b", "count")
+    h.1<-cbind(h.1, variable="dmy_b")
+    setcolorder(h.1, c("year", "variable", "count"))
+    h.2<-dt[complete.cases(year) & complete.cases(dmy_b), .N]
+    h.2<-data.table(variable="dmy_b", total=h.2)
+    
+    #day_of_birth missing, month_of_birth and year_of_birth present
+    i.1<-dt[complete.cases(year) & complete.cases(my_b), lapply(.SD, FUN=sum), .SDcols=c("my_b"), by=.(year)] 
+    setnames(i.1, "my_b", "count")
+    i.1<-cbind(i.1, variable="my_b")
+    setcolorder(i.1, c("year", "variable", "count"))
+    i.2<-dt[complete.cases(year) & complete.cases(my_b), .N]
+    i.2<-data.table(variable="my_b", total=i.2)
+    
+    #day_of_death, month_of_death and year_of_death present
+    j.1<-dt[complete.cases(year) & complete.cases(dmy_d), lapply(.SD, FUN=sum), .SDcols=c("dmy_d"), by=.(year)] 
+    setnames(j.1, "dmy_d", "count")
+    j.1<-cbind(j.1, variable="dmy_d")
+    setcolorder(j.1, c("year", "variable", "count"))
+    j.2<-dt[complete.cases(year) & complete.cases(dmy_d), .N]
+    j.2<-data.table(variable="dmy_d", total=j.2)
+    
+    #day_of_death missing, month_of_death and year_of_death present
+    k.1<-dt[complete.cases(year) & complete.cases(my_d), lapply(.SD, FUN=sum), .SDcols=c("my_d"), by=.(year)] 
+    setnames(k.1, "my_d", "count")
+    k.1<-cbind(k.1, variable="my_d")
+    setcolorder(k.1, c("year", "variable", "count"))
+    k.2<-dt[complete.cases(year) & complete.cases(my_d), .N]
+    k.2<-data.table(variable="my_d", total=k.2)
+    
+    count<-rbind(b.1,c.1,d.1,e.1,f.1,g.1,h.1,i.1,j.1,k.1)
+    total<-rbind(b.2,c.2,d.2,e.2,f.2,g.2,h.2,i.2,j.2,k.2)
+    
+    results<-list("count"=count, "total"=total)
+    return(results)
+}
+```
+
+```{r combine_results_functions, include=FALSE}
+#Combine results when counts by year
+combine_counts1.y<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, year, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:2) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "year")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "year", "count"))
+  
+  b<-totals_dt[, lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+}
+
+combine_counts2.y<-function(counts_dt, totals_dt){
+  a<-counts_dt[,combination:= paste(variable, year, vocabulary, sep=":")]
+  a.1<-a[,.(count, combination)]
+  a.2<-a.1[, lapply(.SD, sum), by=.(combination)]
+  a.2[, paste0("combination", 1:3) := tstrsplit(combination, ":")]
+  setnames(a.2, "combination1", "variable")
+  setnames(a.2, "combination2", "year")
+  setnames(a.2, "combination3", "vocabulary")
+  a.2[, combination:=NULL]
+  setcolorder(a.2, c("variable", "year", "vocabulary", "count"))
+  
+  b<-totals_dt[,lapply(.SD, sum), by=.(variable)]
+  
+  setkey(a.2, variable)
+  setkey(b, variable)
+  results<-merge.data.table(a.2, b, all.x = TRUE)
+  results[is.na(total), "total"]<-0
+  return(results)
+  
+}
+
+```
+
+```{r step4_5_check, include=FALSE, warning=FALSE}
+step_4_5_check<- function(tables_list){
+  
+  Res.4.1<-list()
+  Res.4.2<-list()
+  Res.dates.y<-list()
+  Res.p.t<-list() #total number of persons with recorded year
+  w<-1
+  
+  for (i in 1:length(tables_list)){
+    
+    df<- fread(paste(path_dir, tables_list[i], sep=""), stringsAsFactors = FALSE, colClasses = "character")
+    df<-df[, lapply(.SD, FUN=function(x) gsub("^$|^ $", NA, x))]
+    
+    #Create a combination variable by combining all columns, keep only that variable
+    cols<-colnames(df)
+    dup<-df[, combination := Reduce(function(...) paste(..., sep = "_^_"), .SD[, mget(cols)])][,"combination"]
+    
+    write.csv(dup, paste(tmp,"dup_", tables_list[i],sep="") ,row.names = F)
+    rm(dup)
+    
+    Res.4.1[[w]]<-step4.1(dt=df, year_var = "year_of_birth")
+    Res.4.2[[w]]<-step4.2(dt=df, year_var = "year_of_birth")
+    Res.dates.y[[w]]<-dates_count.y(dt=df, year_var = "year_of_birth")
+    
+     Res.p<-df[, c("person_id", "year_of_birth")][!is.na(person_id)][!is.na(year_of_birth)] #will be used to check conventions as well
+    write.csv(Res.p, paste(tmp,"persons_", tables_list[i],sep="") ,row.names = F)
+    rm(Res.p)
+    Res.p.t[[w]]<-df[!is.na(year_of_birth) & !is.na(person_id),.(total=.N)]
+     w<-w+1
+     rm(df)
+  }
+  
+ #save results for duplicates
+  dup_files<-list.files(tmp, pattern="^dup")
+  if (length(dup_files)>1){
+  dup<-fread(paste0(tmp,dup_files[1]), sep=";")
+  i<-2
+  for (i in 2:length(dup_files)){
+    dup<-rbind(dup,fread(paste0(tmp,dup_files[i]), sep=";"))
+    dup<-dup[duplicated(combination)]
+  }
+  dup<-dup[,.N]
+  } else {
+    dup<-fread(paste0(tmp,dup_files), sep=";")
+    dup<-dup[duplicated(combination)]
+    dup<-dup[,.N]
+  }
+  rm(dup_files)
+   
+     
+    #Results for person_id
+  #load all person id files
+  persons_files<-list.files(tmp, pattern="^persons", full.names = T)
+  #get size of each file
+  size_persons<-lapply(persons_files, function(x) file.size(x))
+  size_persons<-do.call(rbind,size_persons)
+  size_persons<-data.table(file=persons_files, size_persons)
+  setnames(size_persons, names(size_persons)[2], "size")
+  size_persons[,size:=as.numeric(size)]
+  #order files by size
+  size_persons<-size_persons[order(size)]
+  #get number of persons files
+  length_persons_files<-size_persons[,.N]
+
+  
+  if (length(persons_files)>1){
+  Res.con<-fread(size_persons[length_persons_files,file])
+  for (i in 1:(length_persons_files-1)){
+    a<-fread(size_persons[i,file])
+    Res.con<-rbind(Res.con,a)
+    rm(a)
+  }
+Res.con<-Res.con[duplicated(person_id),.N]
+  } 
+  
+    if (length(persons_files)==1){
+  Res.con<-fread(persons_files)
+  Res.con<-Res.con[duplicated(person_id),.N]
+    } 
+  Res.convention<-convention_check_persons(pers_dt = Res.con)
+  rm(Res.con)
+  
+  
+  #Results for person_id
+
+  #stratified by year
+  if (length(persons_files)>1){
+  Res.p.c<-fread(size_persons[length_persons_files,file])
+  Res.p.c<-Res.p.c[!duplicated(person_id)]
+  for (i in 1:(length_persons_files-1)){
+    a<-fread(size_persons[i,file])
+    a<-a[!duplicated(person_id)]
+    Res.p.c<-rbind(Res.p.c,a)
+    Res.p.c<-Res.p.c[!duplicated(person_id)]
+    rm(a)
+  }
+    Res.p.c<-data.table(variable_name="person_id",Res.p.c[, .(count=.N), by="year_of_birth"])
+     names(Res.p.c)<-c("variable_name", "year", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+    
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by year_of_birth
+  rm(Res.p.c, Res.p.t)
+  } 
+  
+  if(length(persons_files)==1){
+  Res.p.c<-fread(persons_files)
+  Res.p.c<-Res.p.c[!duplicated(person_id)]
+  
+  Res.p.c<-data.table(variable_name="person_id",Res.p.c[, .(count=.N), by="year_of_birth"])
+  names(Res.p.c)<-c("variable_name", "year", "count")
+  Res.p.t<-do.call(rbind, Res.p.t)
+  Res.p.t<-sum(Res.p.t)
+  Res.p<-data.table(Res.p.c, total=Res.p.t) #results stratified by meaning
+  rm(Res.p.c, Res.p.t)
+  }
+    
+i<-1
+     #Combine results for counts by year(other variables)
+  Res.4.1.c<-vector(mode="list", length=length(Res.4.1))
+  Res.4.1.t<-vector(mode="list", length=length(Res.4.1))
+  
+  for (i in 1:length(Res.4.1)){
+    Res.4.1.c[[i]]<-do.call(rbind, Res.4.1[[i]][1])
+     Res.4.1.t[[i]]<-do.call(rbind, Res.4.1[[i]][2])
+  }
+  Res.4.1.c<-do.call(rbind, Res.4.1.c)
+ Res.4.1.t<-do.call(rbind, Res.4.1.t)
+ Res.4.1<-combine_counts1.y(Res.4.1.c, Res.4.1.t)
+ setnames(Res.4.1, "variable", "variable_name")
+ Res.4.1<-rbind(Res.p, Res.4.1)
+   i<-1
+  #Combine counts by year(2 or more categories)
+ Res.4.2.c<-vector(mode="list", length=length(Res.4.2))
+  Res.4.2.t<-vector(mode="list", length=length(Res.4.2))
+  for (i in 1:length(Res.4.2)){
+    Res.4.2.c[[i]]<-do.call(rbind, Res.4.2[[i]][1])
+     Res.4.2.t[[i]]<-do.call(rbind, Res.4.2[[i]][2])
+  }
+  Res.4.2.c<-do.call(rbind, Res.4.2.c)
+  Res.4.2.c<-Res.4.2.c[vocabulary != "NA"]
+ Res.4.2.t<-do.call(rbind, Res.4.2.t)
+ Res.4.2<-combine_counts2.y(Res.4.2.c, Res.4.2.t)
+ setnames(Res.4.2, "variable", "variable_name")
+i<-1
+ #Combine counts for dates by year
+ Res.dates.y.c<-vector(mode="list", length=length(Res.dates.y))
+  Res.dates.y.t<-vector(mode="list", length=length(Res.dates.y))
+  for (i in 1:length(Res.dates.y)){
+    Res.dates.y.c[[i]]<-do.call(rbind, Res.dates.y[[i]][1])
+     Res.dates.y.t[[i]]<-do.call(rbind, Res.dates.y[[i]][2])
+  }
+  Res.dates.y.c<-do.call(rbind, Res.dates.y.c)
+ Res.dates.y.t<-do.call(rbind, Res.dates.y.t)
+ Res.dates.y<-combine_counts1.y(Res.dates.y.c, Res.dates.y.t)
+  
+ 
+  output<-list("CONVENTIONS"=Res.convention, "COUNT1_Y"=Res.4.1, "COUNT2_Y"=Res.4.2[vocabulary != "NA"],  "DATES.Y"=Res.dates.y, "DUP"=dup)
+  return(output)
+}
+```
+
+```{r run_script, echo=FALSE, warning=FALSE}
+Results.persons<-step_4_5_check(actual_tables)
+```
+
+```{r include=FALSE}
+ unlink(paste0(persons_dir, "tmp"), recursive = T)
+```
+
+<br>
+
+<div class = 'box1'>
+General information  
+<br> 
+
+Conventions:  
+**1.** Every person_id has a single row (i.e. `person_id` is a primary key).     
+
+</div>
+
+<br>
+
+<div class = 'box2'>
+
+Duplicated rows:
+
+```{r duplicated_rows, echo=FALSE}
+dup<-Results.persons$DUP
+
+if(dup>0){
+  print(paste0("There are ", dup, " duplicated rows in the data. Take caution when interpreting counts."))
+} else {
+  print("There are no duplicated rows in the data.")
+}
+```
+
+
+## 1. Convention check
+
+Check if conventions are satisfied.
+
+```{r results_convention, echo=FALSE, warning=FALSE}
+#Output for convention check
+Res.convention<-Results.persons$CONVENTION
+
+if (nrow(Res.convention[error==TRUE])==0){
+  print("All conventions are satisfied.")
+} else {
+  datatable(Res.convention[error==TRUE], option=list(scrollX=TRUE))
+}
+
+```
+
+</div>
+
+<br>
+
+<div class = 'box3'>
+
+## 2. Counts of categorical variables
+
+<br>
+
+Counts will be divided based on the number of categories:     
+ 
+2 or more categories:     
+**a.** sex_at_instance_creation  
+**b.** race  
+**c.** country_of_birth  
+**d.** quality  
+ 
+Other variables:    
+**a.** person_id    
+
+<br>
+
+#### **Counts stratified by year (2 or more categories)** 
+
+If years before 1890 or years in the future are present, they will be colored red.
+
+```{r count2_y, echo=FALSE, warning=FALSE}
+if(nrow(Results.persons$COUNT2_Y) !=0){
+Res.count2.y<-data.table(table_name="PERSONS", Results.persons$COUNT2_Y)
+#Remove empty vocabulary values
+Res.count2.y<-Res.count2.y[!(is.na(vocabulary))]
+Res.count2.y<-Res.count2.y[vocabulary!=""]
+if (nrow(Res.count2.y[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are) ", nrow(Res.count2.y[(count ==0 & total ==0)]), " row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular year."))
+}
+#Remove rows where both count and total are zero
+Res.count2.y<-Res.count2.y[(count !=0 & total !=0)]
+#Calculate percentage
+Res.count2.y[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count2.y[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+if(nrow(Results.persons$COUNT2_Y) !=0){
+#Save results as .csv file
+write.csv(Res.count2.y, paste(persons_dir,"persons_year_2categories.csv",sep="") ,row.names = F)
+}
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count2.y[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count2.y[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count2.y[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.count2.y.1<-Res.count2.y[count != "<5"]
+Res.count2.y.1[, count:= as.numeric(count)]
+Res.count2.y.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count2.y[,.N] != 0){
+datatable(Res.count2.y, option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold')))
+}
+}
+
+if(nrow(Results.persons$COUNT2_Y) !=0){
+#Save results as .csv file
+write.csv(Res.count2.y, paste(persons_less,"persons_year_2categories_masked.csv",sep="") ,row.names = F)
+}
+```
+
+
+If years in the future or before 1890 are present they will not be plotted in the graphs.   
+
+```{r graph_count2_y, echo=FALSE, warning=FALSE}
+if(nrow(Results.persons$COUNT2_Y) !=0){
+  if (Res.count2.y.1[,.N] != 0){
+Res.count2.y.graph<-Res.count2.y.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1890]
+fig2.y<-vector(mode="list", length=length(unique(Res.count2.y.graph[["variable_name"]])))
+for(i in 1:length(unique(Res.count2.y.graph[["variable_name"]]))){
+  fig2.y[[i]]<-ggplotly(ggplot(Res.count2.y.graph[variable_name==unique(Res.count2.y.graph[["variable_name"]])[i]],
+                               aes(x = year, y = percentage, fill=vocabulary)) +
+                               geom_bar(position="dodge", stat="identity") +
+                              theme_classic() +
+                               ggtitle(unique(Res.count2.y.graph[["variable_name"]])[i]) + 
+                                 xlab("Year") +
+                               ylab("Percentage")+
+                          ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 90),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+}
+  }
+```
+
+
+```{r display_graph_count2_y, echo=FALSE, warning=FALSE}
+if(nrow(Results.persons$COUNT2_Y) !=0){
+    if (Res.count2.y.1[,.N] != 0){
+htmltools::tagList(list(fig2.y))
+    }
+}
+```
+
+<br>
+
+#### **Counts stratified by year (other variables)**  
+
+If years before 1890 or years in the future are present, they will be colored red.  
+
+```{r count1_y, echo=FALSE, warning=FALSE}
+Res.count1.y<-data.table(table_name="PERSONS", Results.persons$COUNT1_Y)
+if (nrow(Res.count1.y[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are) ", nrow(Res.count1.y[(count ==0 & total ==0)]), " row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular year."))
+}
+#Remove rows where both count and total are zero
+Res.count1.y<-Res.count1.y[(count !=0 & total !=0)]
+Res.count1.y[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.count1.y[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+  #Save results as .csv file
+write.csv(Res.count1.y, paste(persons_dir,"persons_year_other.csv",sep="") ,row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.count1.y[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.count1.y[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.count1.y[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.count1.y.1<-Res.count1.y[count != "<5"]
+Res.count1.y.1[, count:= as.numeric(count)]
+Res.count1.y.1[, percentage:= as.numeric(percentage)]
+
+if (Res.count1.y[,.N] != 0){
+datatable(Res.count1.y,  option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold')))
+}
+
+  #Save results as .csv file
+write.csv(Res.count1.y, paste(persons_less,"persons_year_other_masked.csv",sep="") ,row.names = F)
+```
+
+
+If years in the future or before 1890 are present they will not be plotted in the graphs.   
+
+```{r graph_count1_y, echo=FALSE, warning=FALSE}
+if (Res.count1.y.1[,.N] != 0){
+Res.count1.y.graph<-Res.count1.y.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1890]
+ggplotly(ggplot(Res.count1.y.graph, aes(x = year, y = percentage)) +
+                               geom_linerange(
+                                 aes(x=year, ymin=0, ymax=percentage, group= variable_name),
+                                 color="gray", size=1.5,
+                                 position = position_dodge(0.6)) + 
+                              geom_point(
+                                aes(color=variable_name),
+                                position=position_dodge(0.6), size=2
+                              ) +
+                              theme_classic() +
+                               ggtitle("Counts stratified by year") + 
+                               xlab("Year") +
+                               ylab("Percentage")+
+           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 90),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+}
+```
+
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 3. Distribution of continous variables and counts of date variables
+
+<br> 
+
+#### **Distribution of continous variables**
+
+The PERSONS table does not contain continous variables.
+<br>
+
+#### **Counts of dates variables**
+
+Explanation of variables:  
+**a.** dmy_b: day, month and year of birth present  
+**b.** my_b: day of birth missing and, month and year of birth present  
+**c.** dmy_d: day, month and year of death present  
+**d.** my_d: day of death missing and, month and year of death present  
+<br>
+
+#### **Counts stratified by year**
+
+If years before 1890 or years in the future are present, they will be colored red.
+
+```{r count.dates_y, echo=FALSE, warning=FALSE}
+#Output for dates count by meaning
+Res.dates.y<-data.table(table_name="PERSONS", Results.persons$DATES.Y)
+setnames(Res.dates.y, "variable", "variable_name")
+if (nrow(Res.dates.y[(count ==0 & total ==0)])>0) {
+  print(paste("There is(are) ", nrow(Res.dates.y[(count ==0 & total ==0)]), " row(s) with a zero value for both count and total. Those will not be displayed in the tables or graphs. This happens when a variable is completely missing for a particular year."))
+}
+
+#Remove rows where both count and total are 0
+Res.dates.y<-Res.dates.y[(count !=0 & total !=0)]
+Res.dates.y[, percentage:=round((count/total)*100, digits=1)]
+
+#If count>0 and percentage=0, replace percentage with rounded to the 5 level
+Res.dates.y[as.numeric(count) > 0 & as.numeric(percentage) == 0, percentage := round((count/total)*100, digits=6)]
+
+#Save results as .csv file
+write.csv(Res.dates.y, paste(persons_dir,"persons_year_dates.csv",sep=""), row.names = F)
+
+#Replace counts less than 5 with "<5" and percentage with "N/A"
+Res.dates.y[, count:= as.character(count)][as.numeric(count) > 0 & as.numeric(count) < 5, count := "<5"]
+Res.dates.y[, percentage:= as.character(percentage)][count == "<5", percentage := "N/A"]
+Res.dates.y[, total:= as.character(total)][as.numeric(total) > 0 & as.numeric(total) < 5, total := "<5"]
+
+#Put <5 counts in another dataset so the formatting can work
+Res.dates.y.1<-Res.dates.y[count != "<5"]
+Res.dates.y.1[, count:= as.numeric(count)]
+Res.dates.y.1[, percentage:= as.numeric(percentage)]
+
+if (Res.dates.y[,.N] != 0){
+datatable(Res.dates.y,  option=list(scrollX=TRUE)) %>% formatStyle("percentage",
+  background = styleColorBar(range(0:100), "#76b82a"),
+  backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') %>% formatStyle(
+  'year', 
+  color = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('red', 'black', 'red')),
+  fontWeight = styleInterval(c(1890, as.numeric(substr(as.character(Sys.Date()), 1, 4))), c('bold', 'normal', 'bold')))
+}
+
+#Save results as .csv file
+write.csv(Res.dates.y, paste(persons_less,"persons_year_dates_masked.csv",sep=""), row.names = F)
+```
+
+
+If years in the future or before 1890 are present they will not be plotted in the graphs.
+
+```{r graph_count.dates_m, echo=FALSE, warning=FALSE}
+if (Res.dates.y.1[,.N] != 0){
+
+Res.dates.y.graph<-Res.dates.y.1[year<=as.numeric(substr(as.character(Sys.Date()), 1, 4)) & year>=1890]
+ggplotly(ggplot(Res.dates.y.graph, aes(x = year, y = percentage, group=variable_name)) +
+                               geom_line(aes(color=variable_name)) +
+                           geom_point(aes(color=variable_name)) +
+                              theme_classic() +
+                               ggtitle("Counts of date variables by year") + 
+                               xlab("Year") +
+                               ylab("Percentage")+
+           ylim(0,100) +
+                               theme(axis.text.x = element_text(angle = 90),
+                                     axis.title.x = element_text(colour = "#76b82a"),
+                                     axis.title.y = element_text(colour = "#76b82a"),
+                                     plot.title = element_text(colour = "#76b82a")))
+
+}
+```
+
+</div>
+
+<br>
+
+<div class = 'box4'>
+
+## 4. Calculations
+
+<br> 
+
+In this section is explained how each count is being calculated.  
+Numerator= count  
+Denominator= total   
+Year= `year_of_birth` 
+
+```{r calculations_table, echo=FALSE, warning=FALSE}
+calculations_persons<-data.table(rbind(
+  cbind(calculation= "Counts stratified by year(other variables)", variable_name=c("person_id"), numerator=c("Number of unique persons"), denominator=c("Number of total observations with a recorded year of birth")),
+      cbind(calculation= "Counts stratified by year(2 or more categories)", variable_name=c("sex_at_instance_creation", "race", "country_of_birth", "quality"), numerator=c("Number of complete observations per category in a particular year","Number of complete observations per category in a particular year","Number of complete observations per category in a particular year","Number of complete observations per category in a particular year"), denominator=c("Number of total observations with a recorded year_of_birth","Number of total observations with a recorded year_of_birth","Number of total observations with a recorded year_of_birth","Number of total observations with a recorded year_of_birth")),
+  cbind(calculation= "Date counts stratified by year", variable_name=c("day_of_birth", "month_of_birth", "year_of_birth", "day_of_death", "month_of_death", "year_of_death", "dmy_b", "my_b", "dmy_d", "my_d"), numerator=c( "Number of complete observations in a particular year","Number of complete observations in a particular year","Number of complete observations in a particular year","Number of complete observations in a particular year","Number of complete observations in a particular year","Number of complete observations in a particular year","Number of complete observations(day,month and year of birth present) in a particular year", "Number of complete observations(month and year of birth present, while day of birth missing) in a particular year", "Number of complete observations(day,month and year of death present) in a particular year","Number of complete observations(month and year of death present, while day of death missing) in a particular year"), denominator=c("Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth","Number of total observations with a recorded year of birth"))
+))
+datatable(calculations_persons)
+```
+
+</div>
+
+<br>
+
+<div class = 'box5'>
+
+## 5. Output folder structure   
+
+PERSONS     
+**1.** PERSONS.html: Rmarkdown report      
+**2.** `persons_year_2categories.csv`: counts of variables with 2 or more categories stratified by year of birth      
+**3.** `persons_year_other.csv`: counts of other variables stratified by year of birth       
+**4.** `persons_year_dates.csv`: counts of date variables stratified by year of birth       
+**5.** Masked:      
+&nbsp;&nbsp;&nbsp;&nbsp;***a.*** `persons_year_2categories_masked.csv`: counts of variables with 2 or more categories stratified by year of birth where counts smaller than 5 are masked          
+&nbsp;&nbsp;&nbsp;&nbsp;***b.*** `persons_year_other_masked.csv`: counts of other variables stratified by year of birth where counts smaller than 5 are masked       
+&nbsp;&nbsp;&nbsp;&nbsp;***c.*** `persons_year_dates_masked.csv`: counts of date variables stratified by year of birth where counts smaller than 5 are masked               
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
